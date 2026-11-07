@@ -929,6 +929,7 @@
         "adjust": "调整",
         "crop": "裁剪",
         "export": "导出",
+        "history": "历史记录",
         "info": "信息",
         "inpaint": "修复",
         "masks": "蒙版",
@@ -2382,8 +2383,16 @@
       "select": "选择",
       "selectImageFile": "选择图像文件"
     },
+    "history": {
+      "title": "历史记录",
+      "initial": "初始状态",
+      "undo": "撤销",
+      "redo": "重做",
+      "noImage": "选择一张图片以查看其编辑历史"
+    },
     "lut": {
       "clearLut": "清除 LUT",
+      "clearSearch": "清除搜索",
       "customLuts": "自定义 LUT",
       "empty": "暂无 LUT — 请导入一些",
       "filmEmulations": "胶片模拟",
@@ -2392,7 +2401,9 @@
       "importFailed": "导入 LUT 失败",
       "intensity": "强度",
       "label": "LUT",
+      "noResults": "没有匹配的 LUT",
       "removeLut": "移除 LUT",
+      "search": "搜索 LUT",
       "select": "选择",
       "selectLutFile": "选择 LUT 文件",
       "unsupportedFormat": "检测到不支持的文件格式：.{{ext}}"

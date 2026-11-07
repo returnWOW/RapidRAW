@@ -1,7 +1,7 @@
 import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronDown, ImageOff, Upload, X, Trash2 } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown, ImageOff, Search, Upload, X, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useContextMenu } from '../../context/ContextMenuContext';
@@ -52,6 +52,7 @@ export default function LUTControl({
 
   const [isExpanded, setIsExpanded] = useState(false);
   const [entries, setEntries] = useState<LutEntry[]>([]);
+  const [search, setSearch] = useState('');
   const [previews, setPreviews] = useState<Record<string, string | null>>({});
   const [isLoadingPreviews, setIsLoadingPreviews] = useState(false);
   const previewCache = useRef<Map<string, Record<string, string | null>>>(new Map());
@@ -205,8 +206,14 @@ export default function LUTControl({
     }
   };
 
-  const builtInLuts = entries.filter((e) => e.isBuiltIn);
-  const customLuts = entries.filter((e) => !e.isBuiltIn);
+  const filteredEntries = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return entries;
+    return entries.filter((entry) => entry.name.toLowerCase().includes(query));
+  }, [entries, search]);
+
+  const builtInLuts = filteredEntries.filter((e) => e.isBuiltIn);
+  const customLuts = filteredEntries.filter((e) => !e.isBuiltIn);
 
   const renderSwatch = (entry: LutEntry) => {
     const thumb = previews[entry.path];
@@ -218,21 +225,23 @@ export default function LUTControl({
         onMouseLeave={() => onLutHover?.(null)}
         onClick={() => handleSwatchClick(entry)}
         onContextMenu={entry.isBuiltIn ? undefined : (e) => handleContextMenu(e, entry)}
-        className={`relative aspect-square rounded-md overflow-hidden bg-bg-tertiary border-2 transition-colors ${
+        className={`flex flex-col rounded-md overflow-hidden bg-bg-tertiary border-2 transition-colors text-left ${
           isSelected ? 'border-accent' : 'border-transparent hover:border-surface'
         }`}
         data-tooltip={entry.name}
       >
-        {isLoadingPreviews && thumb === undefined ? (
-          <div className="w-full h-full animate-pulse bg-surface" />
-        ) : thumb ? (
-          <img src={thumb} alt={entry.name} className="w-full h-full object-cover" draggable={false} />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center text-text-secondary">
-            <ImageOff size={18} />
-          </div>
-        )}
-        <span className="absolute inset-x-0 bottom-0 px-1 py-0.5 text-[10px] text-white bg-black/60 truncate text-left">
+        <div className="relative aspect-square w-full">
+          {isLoadingPreviews && thumb === undefined ? (
+            <div className="w-full h-full animate-pulse bg-surface" />
+          ) : thumb ? (
+            <img src={thumb} alt={entry.name} className="w-full h-full object-cover" draggable={false} />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-text-secondary">
+              <ImageOff size={18} />
+            </div>
+          )}
+        </div>
+        <span className="w-full px-1.5 py-1 text-[10px] leading-3 text-text-secondary truncate">
           {entry.name}
         </span>
       </button>
@@ -300,52 +309,93 @@ export default function LUTControl({
             className="overflow-hidden"
           >
             <div className={`${lutName ? '' : 'mt-3'} pb-1 space-y-4`}>
-              {builtInLuts.length > 0 && (
-                <div>
-                  <span className="text-sm font-medium text-text-secondary select-none block mb-2">
-                    {t('ui.lut.filmEmulations')}
-                  </span>
-                  <div className="grid grid-cols-3 gap-2">{builtInLuts.map(renderSwatch)}</div>
-                </div>
-              )}
-
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-text-secondary select-none">{t('ui.lut.customLuts')}</span>
-                  {customLuts.length > 0 && (
+              {entries.length > 4 && (
+                <div className="relative">
+                  <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-secondary pointer-events-none" />
+                  <input
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder={t('ui.lut.search')}
+                    className="w-full bg-bg-tertiary text-text-primary text-xs rounded-md pl-8 pr-7 py-1.5 placeholder:text-text-secondary/70 focus:outline-none focus:ring-1 focus:ring-accent"
+                  />
+                  {search && (
                     <button
-                      onClick={handleImport}
-                      className="text-xs text-text-secondary hover:text-accent flex items-center gap-1 transition-colors"
-                      data-tooltip={t('ui.lut.import')}
+                      onClick={() => setSearch('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-text-secondary hover:text-text-primary transition-colors"
+                      data-tooltip={t('ui.lut.clearSearch')}
                     >
-                      <Upload size={12} />
-                      {t('ui.lut.import')}
+                      <X size={12} />
                     </button>
                   )}
                 </div>
+              )}
 
-                {customLuts.length === 0 ? (
-                  <button
-                    onClick={handleImport}
-                    className="w-full flex items-center justify-center gap-1.5 py-4 rounded-md bg-bg-tertiary hover:bg-surface border-2 border-dashed border-text-secondary/20 hover:border-text-secondary/40 text-sm text-text-primary transition-colors cursor-pointer"
-                  >
-                    <Upload size={16} />
-                    {t('ui.lut.import')}
-                  </button>
-                ) : (
-                  <div className="grid grid-cols-3 gap-2">
-                    {customLuts.map(renderSwatch)}
+              {entries.length > 0 && filteredEntries.length === 0 ? (
+                <div className="py-6 text-center text-xs text-text-secondary">{t('ui.lut.noResults')}</div>
+              ) : (
+                <>
+                  {builtInLuts.length > 0 && (
+                    <div>
+                      <span className="text-sm font-medium text-text-secondary select-none block mb-2">
+                        {t('ui.lut.filmEmulations')}
+                      </span>
+                      <div className="grid grid-cols-3 gap-2">{builtInLuts.map(renderSwatch)}</div>
+                    </div>
+                  )}
 
-                    <button
-                      onClick={handleImport}
-                      className="aspect-square rounded-md bg-bg-tertiary border-2 border-dashed border-text-secondary/25 hover:border-accent flex items-center justify-center text-text-secondary hover:text-text-primary transition-all duration-150 cursor-pointer"
-                      data-tooltip={t('ui.lut.import')}
-                    >
-                      <Upload size={18} />
-                    </button>
-                  </div>
-                )}
-              </div>
+                  {!search && (
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium text-text-secondary select-none">
+                          {t('ui.lut.customLuts')}
+                        </span>
+                        {customLuts.length > 0 && (
+                          <button
+                            onClick={handleImport}
+                            className="text-xs text-text-secondary hover:text-accent flex items-center gap-1 transition-colors"
+                            data-tooltip={t('ui.lut.import')}
+                          >
+                            <Upload size={12} />
+                            {t('ui.lut.import')}
+                          </button>
+                        )}
+                      </div>
+
+                      {customLuts.length === 0 ? (
+                        <button
+                          onClick={handleImport}
+                          className="w-full flex items-center justify-center gap-1.5 py-4 rounded-md bg-bg-tertiary hover:bg-surface border-2 border-dashed border-text-secondary/20 hover:border-text-secondary/40 text-sm text-text-primary transition-colors cursor-pointer"
+                        >
+                          <Upload size={16} />
+                          {t('ui.lut.import')}
+                        </button>
+                      ) : (
+                        <div className="grid grid-cols-3 gap-2">
+                          {customLuts.map(renderSwatch)}
+
+                          <button
+                            onClick={handleImport}
+                            className="flex flex-col items-center justify-center gap-1.5 rounded-md bg-bg-tertiary border-2 border-dashed border-text-secondary/25 hover:border-accent text-text-secondary hover:text-text-primary transition-all duration-150 cursor-pointer aspect-square"
+                            data-tooltip={t('ui.lut.import')}
+                          >
+                            <Upload size={18} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {search && customLuts.length > 0 && (
+                    <div>
+                      <span className="text-sm font-medium text-text-secondary select-none block mb-2">
+                        {t('ui.lut.customLuts')}
+                      </span>
+                      <div className="grid grid-cols-3 gap-2">{customLuts.map(renderSwatch)}</div>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </motion.div>
         )}

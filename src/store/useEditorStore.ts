@@ -36,6 +36,12 @@ interface BaseRenderSize extends ImageDimensions {
 
 export type WgpuPhase = 'hidden' | 'arming' | 'live';
 
+interface SavedTimeline {
+  history: Adjustments[];
+  labels: string[];
+  index: number;
+}
+
 interface EditorState {
   // Core Image & Adjustments
   selectedImage: SelectedImage | null;
@@ -46,6 +52,10 @@ interface EditorState {
   history: Adjustments[];
   historyLabels: string[];
   historyIndex: number;
+  // image the current timeline belongs to, and the timelines kept for
+  // images switched away from earlier in the session
+  historyPath: string | null;
+  historyByPath: Record<string, SavedTimeline>;
 
   // Previews & Overlays
   finalPreviewUrl: string | null;
@@ -114,6 +124,8 @@ interface EditorState {
   redo: () => void;
   resetHistory: (initialState: Adjustments) => void;
   goToHistoryIndex: (index: number) => void;
+  beginImageHistory: (path: string, initial: Adjustments) => void;
+  endImageHistory: (fallback: Adjustments) => void;
 }
 
 type CanvasToolState = Pick<
@@ -136,6 +148,8 @@ export const useEditorStore = create<EditorState>((set) => ({
   history: [INITIAL_ADJUSTMENTS],
   historyLabels: [''],
   historyIndex: 0,
+  historyPath: null,
+  historyByPath: {},
 
   finalPreviewUrl: null,
   uncroppedAdjustedPreviewUrl: null,
@@ -246,5 +260,58 @@ export const useEditorStore = create<EditorState>((set) => ({
         return { historyIndex: index, adjustments: state.history[index] };
       }
       return state;
+    }),
+
+  // switching images keeps each image's timeline for the session, so the
+  // history of one picture survives going away and coming back
+  beginImageHistory: (path, initial) =>
+    set((state) => {
+      const byPath = { ...state.historyByPath };
+      if (state.historyPath && state.historyPath !== path) {
+        byPath[state.historyPath] = {
+          history: state.history,
+          labels: state.historyLabels,
+          index: state.historyIndex,
+        };
+      }
+      const saved = byPath[path];
+      if (saved) {
+        return {
+          historyByPath: byPath,
+          historyPath: path,
+          history: saved.history,
+          historyLabels: saved.labels,
+          historyIndex: saved.index,
+          adjustments: saved.history[saved.index],
+        };
+      }
+      return {
+        historyByPath: byPath,
+        historyPath: path,
+        history: [initial],
+        historyLabels: [''],
+        historyIndex: 0,
+        adjustments: initial,
+      };
+    }),
+
+  endImageHistory: (fallback) =>
+    set((state) => {
+      const byPath = { ...state.historyByPath };
+      if (state.historyPath) {
+        byPath[state.historyPath] = {
+          history: state.history,
+          labels: state.historyLabels,
+          index: state.historyIndex,
+        };
+      }
+      return {
+        historyByPath: byPath,
+        historyPath: null,
+        history: [fallback],
+        historyLabels: [''],
+        historyIndex: 0,
+        adjustments: fallback,
+      };
     }),
 }));

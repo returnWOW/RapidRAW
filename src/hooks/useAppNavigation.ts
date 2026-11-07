@@ -169,7 +169,7 @@ export function useAppNavigation({ clearThumbnailQueue, refs }: AppNavigationPro
   const handleImageSelect = useCallback(
     async (path: string, openInEditor: boolean = true) => {
       const generation = ++imageSelectGeneration;
-      const { selectedImage, isSliderDragging, resetHistory, setEditor } = useEditorStore.getState();
+      const { selectedImage, isSliderDragging, resetHistory, beginImageHistory, setEditor } = useEditorStore.getState();
       const { setLibrary } = useLibraryStore.getState();
       const { setUI } = useUIStore.getState();
       const wasEditorVisible = useUIStore.getState().activeView === 'editor';
@@ -253,7 +253,7 @@ export function useAppNavigation({ clearThumbnailQueue, refs }: AppNavigationPro
         });
 
         setEditor({ adjustments: cached.adjustments });
-        resetHistory(cached.adjustments);
+        beginImageHistory(path, cached.adjustments);
         prevAdjustmentsRef.current = { path, adjustments: cached.adjustments };
 
         setLibrary({ isViewLoading: false });
@@ -355,7 +355,7 @@ export function useAppNavigation({ clearThumbnailQueue, refs }: AppNavigationPro
       const { setLibrary, sortCriteria } = useLibraryStore.getState();
       const { setUI } = useUIStore.getState();
       const { setProcess } = useProcessStore.getState();
-      const { selectedImage, resetHistory, setEditor } = useEditorStore.getState();
+      const { selectedImage, endImageHistory, setEditor } = useEditorStore.getState();
       const libraryViewMode = appSettings?.libraryViewMode;
 
       if (!skipHistory && path) {
@@ -418,7 +418,7 @@ export function useAppNavigation({ clearThumbnailQueue, refs }: AppNavigationPro
           debouncedSetHistory.cancel();
           setEditor({ selectedImage: null, finalPreviewUrl: null, uncroppedAdjustedPreviewUrl: null, histogram: null });
           setEditor({ adjustments: INITIAL_ADJUSTMENTS });
-          resetHistory(INITIAL_ADJUSTMENTS);
+          endImageHistory(INITIAL_ADJUSTMENTS);
           useEditorStore.getState().patchesSentToBackend.clear();
         }
 

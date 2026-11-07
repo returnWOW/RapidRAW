@@ -932,6 +932,7 @@
         "adjust": "Adjust",
         "crop": "Crop",
         "export": "Export",
+        "history": "History",
         "info": "Info",
         "inpaint": "Inpaint",
         "masks": "Masks",
@@ -2388,8 +2389,16 @@
       "select": "Select",
       "selectImageFile": "Select an image file"
     },
+    "history": {
+      "title": "History",
+      "initial": "Initial State",
+      "undo": "Undo",
+      "redo": "Redo",
+      "noImage": "Select an image to see its edit history"
+    },
     "lut": {
       "clearLut": "Clear LUT",
+      "clearSearch": "Clear search",
       "customLuts": "Custom LUTs",
       "empty": "No LUTs yet — import some",
       "filmEmulations": "Film Emulations",
@@ -2398,7 +2407,9 @@
       "importFailed": "Failed to import LUTs",
       "intensity": "Intensity",
       "label": "LUT",
+      "noResults": "No LUTs match your search",
       "removeLut": "Remove LUT",
+      "search": "Search LUTs",
       "select": "Select",
       "selectLutFile": "Select a LUT file",
       "unsupportedFormat": "Unsupported file format(s) detected: .{{ext}}"
