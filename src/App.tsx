@@ -69,6 +69,7 @@ import { useProductivityActions } from './hooks/useProductivityActions';
 
 import { useAppInitialization } from './hooks/useAppInitialization';
 import { useAndroidBackHandler } from './hooks/useAndroidBackHandler';
+import { useHistoryPersistence } from './hooks/useHistoryPersistence';
 import './i18n';
 
 import {
@@ -477,6 +478,7 @@ function App() {
   });
 
   useAndroidBackHandler();
+  useHistoryPersistence();
 
   useKeyboardShortcuts({
     sortedImageList,

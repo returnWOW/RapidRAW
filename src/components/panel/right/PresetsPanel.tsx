@@ -897,13 +897,17 @@ export default function PresetsPanel({ onNavigateToCommunity }: PresetsPanelProp
       invoke(Invokes.ApplyAdjustmentsToPaths, { paths: [path], adjustments: { masks: presetMasks } })
         .then(() => invoke<any>(Invokes.LoadMetadata, { path }))
         .then((meta) => {
-          if (!meta?.adjustments?.masks || useEditorStore.getState().selectedImage?.path !== path) return;
-          setEditor((state) => ({
-            adjustments: {
-              ...state.adjustments,
-              masks: mergeAiMaskResults(state.adjustments.masks || [], meta.adjustments.masks),
-            },
-          }));
+          if (!meta?.adjustments?.masks) return;
+          const state = useEditorStore.getState();
+          if (state.selectedImage?.path !== path) return;
+          const mergedAdjustments = {
+            ...state.adjustments,
+            masks: mergeAiMaskResults(state.adjustments.masks || [], meta.adjustments.masks),
+          };
+          setEditor({ adjustments: mergedAdjustments });
+          // The preset step was recorded before the AI mask data arrived;
+          // record the resolved masks as their own undoable step.
+          state.pushHistory(mergedAdjustments, 'AI Mask', path);
         })
         .catch((err) => console.error('Failed to resolve preset AI masks:', err));
     },

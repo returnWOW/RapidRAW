@@ -1,19 +1,19 @@
 import { RefObject } from 'react';
 import { create } from 'zustand';
-import {
-  Adjustments,
-  INITIAL_ADJUSTMENTS,
-  MaskContainer,
-  AiPatch,
-  CropGeometry,
-  pickCropGeometry,
-} from '../utils/adjustments';
+import { Adjustments, INITIAL_ADJUSTMENTS, MaskContainer, CropGeometry, pickCropGeometry } from '../utils/adjustments';
 import { SelectedImage, WaveformData, BrushSettings, CompareView } from '../components/ui/AppProperties';
 import { ChannelConfig } from '../components/adjustments/Curves';
 import { ImageDimensions } from '../hooks/useImageRenderSize';
 import { ToolType } from '../components/panel/right/Masks';
 import { OverlayMode } from '../components/panel/right/CropPanel';
-import { describeHistoryChange } from '../utils/editHistory';
+import {
+  areHistoryStatesEqual,
+  describeHistoryChange,
+  getChangedAdjustmentKeys,
+  mergeHistoryUiState,
+  MAX_HISTORY_STEPS,
+} from '../utils/editHistory';
+import { deleteImageHistories, loadImageHistory, moveImageHistory } from '../utils/historyStorage';
 import { HslMixerProperty } from '../utils/hslMixer';
 import type { SpeedEditTarget } from '../components/ui/Slider';
 
@@ -39,8 +39,19 @@ export type WgpuPhase = 'hidden' | 'arming' | 'live';
 interface SavedTimeline {
   history: Adjustments[];
   labels: string[];
+  times: number[];
   index: number;
 }
+
+/** How many image timelines are kept in memory at once. */
+const MAX_CACHED_TIMELINES = 12;
+
+const trimTimelineCache = (byPath: Record<string, SavedTimeline>, keep: string | null) => {
+  for (const key of Object.keys(byPath)) {
+    if (Object.keys(byPath).length <= MAX_CACHED_TIMELINES) break;
+    if (key !== keep) delete byPath[key];
+  }
+};
 
 interface EditorState {
   // Core Image & Adjustments
@@ -51,7 +62,10 @@ interface EditorState {
   // History State
   history: Adjustments[];
   historyLabels: string[];
+  historyTimes: number[];
   historyIndex: number;
+  // true while the newest change is still waiting for the debounced push
+  historyDirty: boolean;
   // image the current timeline belongs to, and the timelines kept for
   // images switched away from earlier in the session
   historyPath: string | null;
@@ -119,12 +133,16 @@ interface EditorState {
 
   // Actions
   setEditor: (updater: Partial<EditorState> | ((state: EditorState) => Partial<EditorState>)) => void;
-  pushHistory: (newAdjustments: Adjustments, label?: string) => void;
+  pushHistory: (newAdjustments: Adjustments, label?: string, path?: string | null) => void;
   undo: () => void;
   redo: () => void;
   resetHistory: (initialState: Adjustments) => void;
   goToHistoryIndex: (index: number) => void;
   beginImageHistory: (path: string, initial: Adjustments) => void;
+  hydrateImageHistory: (path: string) => Promise<void>;
+  resetHistoryForImage: (path: string, initial: Adjustments) => void;
+  forgetImageHistory: (paths: string[]) => void;
+  renameImageHistory: (oldPath: string, newPath: string) => void;
   endImageHistory: (fallback: Adjustments) => void;
 }
 
@@ -141,13 +159,15 @@ export const canvasToolState = (activeTool: Partial<CanvasToolState> = {}): Canv
   ...activeTool,
 });
 
-export const useEditorStore = create<EditorState>((set) => ({
+export const useEditorStore = create<EditorState>((set, get) => ({
   selectedImage: null,
   adjustments: INITIAL_ADJUSTMENTS,
   previewOverride: null,
   history: [INITIAL_ADJUSTMENTS],
   historyLabels: [''],
+  historyTimes: [Date.now()],
   historyIndex: 0,
+  historyDirty: false,
   historyPath: null,
   historyByPath: {},
 
@@ -207,93 +227,276 @@ export const useEditorStore = create<EditorState>((set) => ({
 
   setEditor: (updater) => set((state) => (typeof updater === 'function' ? updater(state) : updater)),
 
-  pushHistory: (newAdj, label) =>
+  pushHistory: (newAdj, label, path) =>
     set((state) => {
+      // A debounced edit can arrive after the user switched images. Never
+      // let it leak into the timeline of the new image.
+      if (path && state.historyPath !== path) return state;
+
+      const head = state.history[state.historyIndex];
+      const changedKeys = getChangedAdjustmentKeys(head, newAdj);
+      // Editor-only changes (tool visibility, clipping overlay) are not
+      // photo edits and do not create a step.
+      if (changedKeys.length === 0) return { historyDirty: false };
+
       const newHistory = state.history.slice(0, state.historyIndex + 1);
       const newLabels = state.historyLabels.slice(0, state.historyIndex + 1);
-      newLabels.push(label || describeHistoryChange(state.history[state.historyIndex], newAdj));
+      const newTimes = state.historyTimes.slice(0, state.historyIndex + 1);
+
       newHistory.push(newAdj);
-      if (newHistory.length > 50) {
-        newHistory.shift();
-        newLabels.shift();
+      newLabels.push(label || describeHistoryChange(head, newAdj, changedKeys));
+      newTimes.push(Date.now());
+
+      const overflow = newHistory.length - MAX_HISTORY_STEPS;
+      if (overflow > 0) {
+        newHistory.splice(0, overflow);
+        newLabels.splice(0, overflow);
+        newTimes.splice(0, overflow);
       }
-      return { history: newHistory, historyLabels: newLabels, historyIndex: newHistory.length - 1 };
+
+      return {
+        history: newHistory,
+        historyLabels: newLabels,
+        historyTimes: newTimes,
+        historyIndex: newHistory.length - 1,
+        historyDirty: false,
+      };
     }),
 
   undo: () =>
     set((state) => {
+      const head = state.history[state.historyIndex];
+      // A change that is still waiting for its debounced history entry is
+      // reverted first instead of skipping a whole committed step.
+      if (!areHistoryStatesEqual(state.adjustments, head)) {
+        return { adjustments: mergeHistoryUiState(head, state.adjustments), historyDirty: false };
+      }
       if (state.historyIndex > 0) {
         const newIndex = state.historyIndex - 1;
-        return { historyIndex: newIndex, adjustments: state.history[newIndex] };
+        return {
+          historyIndex: newIndex,
+          adjustments: mergeHistoryUiState(state.history[newIndex], state.adjustments),
+          historyDirty: false,
+        };
       }
       return state;
     }),
 
   redo: () =>
     set((state) => {
+      const head = state.history[state.historyIndex];
+      if (!areHistoryStatesEqual(state.adjustments, head)) return state;
       if (state.historyIndex < state.history.length - 1) {
         const newIndex = state.historyIndex + 1;
-        return { historyIndex: newIndex, adjustments: state.history[newIndex] };
+        return {
+          historyIndex: newIndex,
+          adjustments: mergeHistoryUiState(state.history[newIndex], state.adjustments),
+          historyDirty: false,
+        };
       }
       return state;
     }),
 
-  resetHistory: (initialState) =>
-    set((state) => ({
-      history: [initialState],
-      historyLabels: [''],
-      historyIndex: 0,
-      adjustments: initialState,
-      ...(state.cropSessionSnapshot
-        ? {
-            cropSessionSnapshot: {
-              path: state.selectedImage?.path ?? null,
-              geometry: pickCropGeometry(initialState),
-            },
-          }
-        : {}),
-    })),
+  resetHistory: (initialState) => {
+    const path = get().historyPath;
+    set((state) => {
+      const byPath = { ...state.historyByPath };
+      if (state.historyPath) delete byPath[state.historyPath];
+      return {
+        historyByPath: byPath,
+        history: [initialState],
+        historyLabels: [''],
+        historyTimes: [Date.now()],
+        historyIndex: 0,
+        historyDirty: false,
+        adjustments: initialState,
+        ...(state.cropSessionSnapshot
+          ? {
+              cropSessionSnapshot: {
+                path: state.selectedImage?.path ?? null,
+                geometry: pickCropGeometry(initialState),
+              },
+            }
+          : {}),
+      };
+    });
+    if (path) void deleteImageHistories([path]);
+  },
 
   goToHistoryIndex: (index) =>
     set((state) => {
       if (index >= 0 && index < state.history.length) {
-        return { historyIndex: index, adjustments: state.history[index] };
+        return {
+          historyIndex: index,
+          adjustments: mergeHistoryUiState(state.history[index], state.adjustments),
+          historyDirty: false,
+        };
       }
       return state;
     }),
 
-  // switching images keeps each image's timeline for the session, so the
-  // history of one picture survives going away and coming back
+  // Switching images keeps each image's timeline for the session, so the
+  // history of one picture survives going away and coming back. Timelines
+  // of images that are no longer in the in-memory cache are loaded from
+  // IndexedDB by hydrateImageHistory().
   beginImageHistory: (path, initial) =>
     set((state) => {
+      if (state.historyPath === path) return state;
+
       const byPath = { ...state.historyByPath };
-      if (state.historyPath && state.historyPath !== path) {
+      if (state.historyPath) {
         byPath[state.historyPath] = {
           history: state.history,
           labels: state.historyLabels,
+          times: state.historyTimes,
           index: state.historyIndex,
         };
       }
+
       const saved = byPath[path];
       if (saved) {
+        // Mark as recently used so trimming keeps the current image.
+        delete byPath[path];
+        byPath[path] = saved;
+        trimTimelineCache(byPath, path);
         return {
           historyByPath: byPath,
           historyPath: path,
           history: saved.history,
           historyLabels: saved.labels,
+          historyTimes: saved.times,
           historyIndex: saved.index,
-          adjustments: saved.history[saved.index],
+          historyDirty: false,
+          adjustments: saved.history[saved.index] ?? initial,
         };
       }
+
+      trimTimelineCache(byPath, path);
       return {
         historyByPath: byPath,
         historyPath: path,
         history: [initial],
         historyLabels: [''],
+        historyTimes: [Date.now()],
         historyIndex: 0,
+        historyDirty: false,
         adjustments: initial,
       };
     }),
+
+  /**
+   * Restores a timeline that was persisted by an earlier session. Only
+   * runs while the image still shows its freshly loaded state, so an edit
+   * made in the meantime is never overwritten.
+   */
+  hydrateImageHistory: async (path) => {
+    const state = get();
+    if (state.historyPath !== path) return;
+    if (state.historyByPath[path]) return;
+    if (state.history.length > 1 || state.historyDirty) return;
+
+    const saved = await loadImageHistory(path);
+    if (!saved || saved.history.length === 0) return;
+
+    const current = get();
+    if (current.historyPath !== path || current.history.length > 1 || current.historyDirty) return;
+
+    let index = saved.history.findIndex((entry) => areHistoryStatesEqual(entry, current.adjustments));
+    if (index < 0) {
+      // The sidecar no longer matches the stored timeline (the image was
+      // reset or edited by another application). Keep the fresh state.
+      void deleteImageHistories([path]);
+      return;
+    }
+
+    let history = saved.history;
+    let labels = saved.labels;
+    let times = saved.times;
+    if (history.length > MAX_HISTORY_STEPS) {
+      const overflow = history.length - MAX_HISTORY_STEPS;
+      history = history.slice(overflow);
+      labels = labels.slice(overflow);
+      times = times.slice(overflow);
+      index = Math.max(0, index - overflow);
+    }
+
+    set({
+      history,
+      historyLabels: labels,
+      historyTimes: times,
+      historyIndex: index,
+      historyDirty: false,
+      adjustments: mergeHistoryUiState(history[index], current.adjustments),
+    });
+  },
+
+  resetHistoryForImage: (path, initial) =>
+    set((state) => {
+      if (state.historyPath !== path) return state;
+      if (state.historyDirty) return state;
+      const head = state.history[state.historyIndex];
+      // The loaded state still matches the timeline: keep its steps, but
+      // adopt the tool visibility of the freshly loaded sidecar.
+      if (state.history.length > 1 && areHistoryStatesEqual(head, initial)) {
+        const history = [...state.history];
+        history[state.historyIndex] = mergeHistoryUiState(head, initial);
+        return { history, adjustments: mergeHistoryUiState(state.adjustments, initial) };
+      }
+      return {
+        history: [initial],
+        historyLabels: [''],
+        historyTimes: [Date.now()],
+        historyIndex: 0,
+        historyDirty: false,
+        adjustments: initial,
+      };
+    }),
+
+  forgetImageHistory: (paths) => {
+    if (paths.length === 0) return;
+    set((state) => {
+      const byPath = { ...state.historyByPath };
+      paths.forEach((path) => delete byPath[path]);
+      const touchesCurrent = state.historyPath !== null && paths.includes(state.historyPath);
+      return {
+        historyByPath: byPath,
+        ...(touchesCurrent
+          ? {
+              history: [state.adjustments],
+              historyLabels: [''],
+              historyTimes: [Date.now()],
+              historyIndex: 0,
+              historyDirty: false,
+            }
+          : {}),
+      };
+    });
+    void deleteImageHistories(paths);
+  },
+
+  renameImageHistory: (oldPath, newPath) => {
+    if (!oldPath || !newPath || oldPath === newPath) return;
+    set((state) => {
+      const byPath = { ...state.historyByPath };
+      const saved = byPath[oldPath];
+      if (saved) {
+        delete byPath[oldPath];
+        byPath[newPath] = saved;
+      }
+      if (state.historyPath === oldPath) {
+        byPath[newPath] = {
+          history: state.history,
+          labels: state.historyLabels,
+          times: state.historyTimes,
+          index: state.historyIndex,
+        };
+        delete byPath[oldPath];
+        return { historyByPath: byPath, historyPath: newPath };
+      }
+      return { historyByPath: byPath };
+    });
+    void moveImageHistory(oldPath, newPath);
+  },
 
   endImageHistory: (fallback) =>
     set((state) => {
@@ -302,15 +505,19 @@ export const useEditorStore = create<EditorState>((set) => ({
         byPath[state.historyPath] = {
           history: state.history,
           labels: state.historyLabels,
+          times: state.historyTimes,
           index: state.historyIndex,
         };
+        trimTimelineCache(byPath, state.historyPath);
       }
       return {
         historyByPath: byPath,
         historyPath: null,
         history: [fallback],
         historyLabels: [''],
+        historyTimes: [Date.now()],
         historyIndex: 0,
+        historyDirty: false,
         adjustments: fallback,
       };
     }),

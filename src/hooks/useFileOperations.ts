@@ -10,6 +10,7 @@ import { JobKind, useProcessStore } from '../store/useProcessStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { ImageFlag, Invokes } from '../components/ui/AppProperties';
 import { Status } from '../components/ui/ExportImportProperties';
+import { debouncedSave, debouncedSetHistory } from './useEditorActions';
 
 export const transferFiles = (kind: JobKind.Copy | JobKind.Move, sourcePaths: string[], destinationFolder: string) =>
   useProcessStore
@@ -80,6 +81,12 @@ export function useFileOperations(
         await invoke(command, { paths: pathsToDelete });
         await refreshImageList();
 
+        // The images no longer exist, so their edit timelines are removed
+        // as well instead of lingering as orphaned records.
+        const deletedHistoryPaths = Array.from(
+          new Set([...pathsToDelete, ...sortedImageList.filter((img) => isDeleted(img.path)).map((img) => img.path)]),
+        );
+
         if (selectedImage && activeView === 'editor') {
           const physicalPath = selectedImage.path.split('?vc=')[0];
           const isFileBeingEditedDeleted = pathsToDelete.some((p) => p === selectedImage.path || p === physicalPath);
@@ -105,6 +112,8 @@ export function useFileOperations(
             }
           }
         }
+
+        useEditorStore.getState().forgetImageHistory(deletedHistoryPaths);
       } catch (err) {
         console.error('Failed to delete files:', err);
         toast.error(`Failed to delete files: ${err}`);
@@ -266,9 +275,19 @@ export function useFileOperations(
 
       if (renameTargetPaths.length > 0 && nameTemplate) {
         try {
+          debouncedSave.flush();
+          debouncedSetHistory.flush();
           const newPaths: Array<string> = await invoke(Invokes.RenameFiles, {
             nameTemplate,
             paths: renameTargetPaths,
+          });
+
+          // Keep each image's edit timeline attached to its new path.
+          renameTargetPaths.forEach((oldPath, index) => {
+            const newPath = newPaths[index];
+            if (newPath && newPath !== oldPath) {
+              useEditorStore.getState().renameImageHistory(oldPath, newPath);
+            }
           });
 
           await refreshImageList();

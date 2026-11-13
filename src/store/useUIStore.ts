@@ -81,6 +81,7 @@ const ALL_PANELS: Panel[] = [
   Panel.Crop,
   Panel.Masks,
   Panel.Ai,
+  Panel.History,
   Panel.Presets,
 ];
 

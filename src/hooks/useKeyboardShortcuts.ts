@@ -310,7 +310,10 @@ export const useKeyboardShortcuts = ({
         },
       },
       undo: {
-        shouldFire: (s: any) => s.ui.activeView === 'editor' && !!s.editor.selectedImage && s.editor.historyIndex > 0,
+        shouldFire: (s: any) =>
+          s.ui.activeView === 'editor' &&
+          !!s.editor.selectedImage &&
+          (s.editor.historyIndex > 0 || s.editor.historyDirty),
         execute: (e: any, s: any) => {
           e.preventDefault();
           s.editor.undo();
@@ -320,6 +323,7 @@ export const useKeyboardShortcuts = ({
         shouldFire: (s: any) =>
           s.ui.activeView === 'editor' &&
           !!s.editor.selectedImage &&
+          !s.editor.historyDirty &&
           s.editor.historyIndex < s.editor.history.length - 1,
         execute: (e: any, s: any) => {
           e.preventDefault();

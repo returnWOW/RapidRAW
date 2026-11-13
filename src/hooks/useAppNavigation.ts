@@ -10,6 +10,7 @@ import { useProcessStore } from '../store/useProcessStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { Invokes, LibraryViewMode, ImageFile } from '../components/ui/AppProperties';
 import { INITIAL_ADJUSTMENTS, normalizeLoadedAdjustments } from '../utils/adjustments';
+import { mergeHistoryUiState } from '../utils/editHistory';
 import { globalImageCache } from '../utils/ImageLRUCache';
 import { decodeImage } from '../utils/decodeImage';
 import { debouncedSave, debouncedSetHistory } from './useEditorActions';
@@ -149,7 +150,7 @@ export function useAppNavigation({ clearThumbnailQueue, refs }: AppNavigationPro
     });
 
     debouncedSave.flush();
-    debouncedSetHistory.cancel();
+    debouncedSetHistory.flush();
 
     const lastActivePath = selectedImage?.path ?? null;
     const isStillVisible =
@@ -182,7 +183,7 @@ export function useAppNavigation({ clearThumbnailQueue, refs }: AppNavigationPro
 
       useEditorStore.getState().patchesSentToBackend.clear();
       debouncedSave.flush();
-      debouncedSetHistory.cancel();
+      debouncedSetHistory.flush();
 
       if (selectedImage?.path && cachedEditStateRef.current) {
         globalImageCache.set(selectedImage.path, cachedEditStateRef.current);
@@ -238,7 +239,7 @@ export function useAppNavigation({ clearThumbnailQueue, refs }: AppNavigationPro
         compactEditorPanelHeightOverride: null,
       });
 
-      if (isFrontendCached) {
+      if (isFrontendCached && cached) {
         setEditor({
           selectedImage: {
             ...cached.selectedImage,
@@ -253,8 +254,14 @@ export function useAppNavigation({ clearThumbnailQueue, refs }: AppNavigationPro
         });
 
         setEditor({ adjustments: cached.adjustments });
+        // Restore this image's timeline (from memory or IndexedDB) and show
+        // the state that belongs to the selected step.
         beginImageHistory(path, cached.adjustments);
-        prevAdjustmentsRef.current = { path, adjustments: cached.adjustments };
+        const timeline = useEditorStore.getState();
+        const shownAdjustments = mergeHistoryUiState(timeline.history[timeline.historyIndex], cached.adjustments);
+        setEditor({ adjustments: shownAdjustments });
+        void useEditorStore.getState().hydrateImageHistory(path);
+        prevAdjustmentsRef.current = { path, adjustments: shownAdjustments };
 
         setLibrary({ isViewLoading: false });
 
@@ -318,6 +325,10 @@ export function useAppNavigation({ clearThumbnailQueue, refs }: AppNavigationPro
         waveform: null,
         uncroppedAdjustedPreviewUrl: null,
       });
+
+      // Keep the previous image's timeline and start/resume this image's
+      // timeline. The metadata loader will replace the placeholder state.
+      beginImageHistory(path, useEditorStore.getState().adjustments);
 
       setLibrary({ isViewLoading: true });
 
@@ -415,7 +426,7 @@ export function useAppNavigation({ clearThumbnailQueue, refs }: AppNavigationPro
 
         if (!preserveEditor && selectedImage) {
           debouncedSave.flush();
-          debouncedSetHistory.cancel();
+          debouncedSetHistory.flush();
           setEditor({ selectedImage: null, finalPreviewUrl: null, uncroppedAdjustedPreviewUrl: null, histogram: null });
           setEditor({ adjustments: INITIAL_ADJUSTMENTS });
           endImageHistory(INITIAL_ADJUSTMENTS);

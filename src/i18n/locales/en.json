@@ -2394,7 +2394,11 @@
       "initial": "Initial State",
       "undo": "Undo",
       "redo": "Redo",
-      "noImage": "Select an image to see its edit history"
+      "noImage": "Select an image to see its edit history",
+      "noEdits": "No edits yet",
+      "steps": "{{count}} steps",
+      "steps_one": "{{count}} step",
+      "steps_other": "{{count}} steps"
     },
     "lut": {
       "clearLut": "Clear LUT",

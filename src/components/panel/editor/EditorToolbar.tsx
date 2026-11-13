@@ -526,7 +526,7 @@ const EditorToolbar = memo(
                   detail={i > 0 ? i : undefined}
                   isDimmed={i > adjustmentsHistoryIndex}
                   isSelected={i === adjustmentsHistoryIndex}
-                  label={label || 'Initial State'}
+                  label={label || t('ui.history.initial')}
                   onClick={() => goToAdjustmentsHistoryIndex(i)}
                   onKeyDown={handleButtonKeyDown}
                   tooltip={label}

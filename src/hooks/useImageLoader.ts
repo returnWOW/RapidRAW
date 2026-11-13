@@ -19,7 +19,6 @@ export function useImageLoader(cachedEditStateRef: React.RefObject<any>) {
   const wgpuPhase = useEditorStore((s) => s.wgpuPhase);
 
   const setEditor = useEditorStore((s) => s.setEditor);
-  const resetHistory = useEditorStore((s) => s.resetHistory);
   const setLibrary = useLibraryStore((s) => s.setLibrary);
   const appSettings = useSettingsStore((s) => s.appSettings);
 
@@ -45,7 +44,15 @@ export function useImageLoader(cachedEditStateRef: React.RefObject<any>) {
           }
 
           setEditor({ adjustments: initialAdjusts });
-          resetHistory(initialAdjusts);
+
+          // The image's timeline is kept per path. The first entry is the
+          // state loaded from disk; a timeline persisted by an earlier
+          // session is restored asynchronously if it still matches.
+          const editor = useEditorStore.getState();
+          const path = selectedImage.path;
+          if (editor.historyPath !== path) editor.beginImageHistory(path, initialAdjusts);
+          useEditorStore.getState().resetHistoryForImage(path, initialAdjusts);
+          void useEditorStore.getState().hydrateImageHistory(path);
         } catch (err) {
           console.error('Failed to load metadata early:', err);
         }
@@ -119,14 +126,7 @@ export function useImageLoader(cachedEditStateRef: React.RefObject<any>) {
         isEffectActive = false;
       };
     }
-  }, [
-    selectedImage?.path,
-    selectedImage?.isReady,
-    appSettings?.editorPreviewResolution,
-    resetHistory,
-    setEditor,
-    setLibrary,
-  ]);
+  }, [selectedImage?.path, selectedImage?.isReady, appSettings?.editorPreviewResolution, setEditor, setLibrary]);
 
   useEffect(() => {
     if (selectedImage?.path && selectedImage.isReady && (finalPreviewUrl || isWgpuActive)) {

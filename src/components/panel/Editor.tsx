@@ -216,8 +216,9 @@ export default function Editor({ onBackToLibrary, onContextMenu, onImageSelect, 
   const undo = useEditorStore((s) => s.undo);
   const redo = useEditorStore((s) => s.redo);
   const goToHistoryIndex = useEditorStore((s) => s.goToHistoryIndex);
-  const canUndo = adjustmentsHistoryIndex > 0;
-  const canRedo = adjustmentsHistoryIndex < adjustmentsHistory.length - 1;
+  const historyDirty = useEditorStore((s) => s.historyDirty);
+  const canUndo = adjustmentsHistoryIndex > 0 || historyDirty;
+  const canRedo = !historyDirty && adjustmentsHistoryIndex < adjustmentsHistory.length - 1;
 
   const isAndroid = osPlatform === 'android';
 

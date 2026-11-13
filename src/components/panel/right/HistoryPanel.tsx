@@ -1,75 +1,143 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Redo, Undo } from 'lucide-react';
+import { History as HistoryIcon, Redo, Undo } from 'lucide-react';
 import clsx from 'clsx';
 import { useEditorStore } from '../../../store/useEditorStore';
+import Text from '../../ui/Text';
+import { TextColors, TextVariants } from '../../../types/typography';
+
+const formatHistoryTime = (timestamp: number | undefined, locale: string) => {
+  if (!timestamp) return '';
+  const date = new Date(timestamp);
+  const now = new Date();
+  const isToday = date.toDateString() === now.toDateString();
+  const time = date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
+  if (isToday) return time;
+  return `${date.toLocaleDateString(locale, { month: '2-digit', day: '2-digit' })} ${time}`;
+};
 
 export default function HistoryPanel() {
-  const { t } = useTranslation();
-  const history = useEditorStore((s) => s.history);
+  const { t, i18n } = useTranslation();
   const labels = useEditorStore((s) => s.historyLabels);
+  const times = useEditorStore((s) => s.historyTimes);
   const index = useEditorStore((s) => s.historyIndex);
+  const historyDirty = useEditorStore((s) => s.historyDirty);
   const selectedImage = useEditorStore((s) => s.selectedImage);
   const undo = useEditorStore((s) => s.undo);
   const redo = useEditorStore((s) => s.redo);
   const goToHistoryIndex = useEditorStore((s) => s.goToHistoryIndex);
   const listRef = useRef<HTMLDivElement>(null);
 
+  const fileName = useMemo(() => {
+    if (!selectedImage?.path) return '';
+    const cleanPath = selectedImage.path.split('?')[0];
+    return cleanPath.split(/[\\/]/).pop() || cleanPath;
+  }, [selectedImage?.path]);
+
   useEffect(() => {
     listRef.current?.querySelector(`[data-history-index="${index}"]`)?.scrollIntoView({ block: 'nearest' });
-  }, [index]);
+  }, [index, labels.length]);
 
   if (!selectedImage) {
     return (
-      <div className="flex items-center justify-center h-full p-4">
-        <span className="text-sm text-text-secondary text-center">{t('ui.history.noImage')}</span>
+      <div className="flex flex-col h-full">
+        <div className="p-3 flex justify-between items-center shrink-0 border-b border-surface">
+          <Text variant={TextVariants.title}>{t('ui.history.title')}</Text>
+        </div>
+        <div className="grow flex items-center justify-center p-6">
+          <Text variant={TextVariants.heading} color={TextColors.secondary} className="text-center">
+            {t('ui.history.noImage')}
+          </Text>
+        </div>
       </div>
     );
   }
 
+  const canUndo = index > 0 || historyDirty;
+  const canRedo = !historyDirty && index < labels.length - 1;
+
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between p-3 border-b border-surface shrink-0">
-        <span className="text-sm font-medium text-text-secondary select-none">{t('ui.history.title')}</span>
-        <div className="flex items-center gap-1">
+      <div className="p-3 flex justify-between items-center shrink-0 border-b border-surface">
+        <div className="min-w-0">
+          <Text variant={TextVariants.title}>{t('ui.history.title')}</Text>
+          <Text
+            variant={TextVariants.small}
+            color={TextColors.secondary}
+            className="block truncate mt-0.5"
+            data-tooltip={selectedImage.path}
+          >
+            {fileName}
+            <span className="opacity-60"> · {t('ui.history.steps', { count: labels.length })}</span>
+          </Text>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
           <button
             onClick={undo}
-            disabled={index <= 0}
-            className="p-1.5 rounded-md text-text-secondary hover:bg-surface hover:text-text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={!canUndo}
+            className="p-2 rounded-full hover:bg-surface text-text-secondary hover:text-text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             data-tooltip={t('ui.history.undo')}
           >
-            <Undo size={16} />
+            <Undo size={18} />
           </button>
           <button
             onClick={redo}
-            disabled={index >= history.length - 1}
-            className="p-1.5 rounded-md text-text-secondary hover:bg-surface hover:text-text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={!canRedo}
+            className="p-2 rounded-full hover:bg-surface text-text-secondary hover:text-text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             data-tooltip={t('ui.history.redo')}
           >
-            <Redo size={16} />
+            <Redo size={18} />
           </button>
         </div>
       </div>
 
-      <div ref={listRef} className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-0.5">
-        {labels.map((label, i) => (
-          <button
-            key={i}
-            data-history-index={i}
-            onClick={() => goToHistoryIndex(i)}
-            className={clsx(
-              'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-left text-xs transition-colors',
-              i === index
-                ? 'bg-surface text-text-primary'
-                : 'text-text-secondary hover:bg-surface/60 hover:text-text-primary',
-              i > index && 'opacity-50',
-            )}
-            data-tooltip={label || t('ui.history.initial')}
-          >
-            <span className="flex-1 truncate">{label || t('ui.history.initial')}</span>
-            <span className="text-[10px] tabular-nums opacity-60">{i}</span>
-          </button>
-        ))}
+      <div ref={listRef} className="grow overflow-y-auto p-2 custom-scrollbar">
+        {labels.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full gap-2 text-center px-4">
+            <HistoryIcon size={20} className="text-text-secondary opacity-50" />
+            <Text variant={TextVariants.small} color={TextColors.secondary}>
+              {t('ui.history.noEdits')}
+            </Text>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-0.5">
+            {labels.map((label, i) => {
+              const isCurrent = i === index;
+              const isFuture = i > index;
+              const displayLabel = label || t('ui.history.initial');
+              return (
+                <button
+                  key={`${i}-${times[i] ?? 0}`}
+                  data-history-index={i}
+                  onClick={() => goToHistoryIndex(i)}
+                  className={clsx(
+                    'w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-colors',
+                    isCurrent
+                      ? 'bg-surface text-text-primary'
+                      : 'text-text-secondary hover:bg-surface/60 hover:text-text-primary',
+                    isFuture && 'opacity-45',
+                  )}
+                  data-tooltip={displayLabel}
+                >
+                  <span
+                    className={clsx(
+                      'w-5 h-5 shrink-0 rounded-full flex items-center justify-center text-[10px] tabular-nums transition-colors',
+                      isCurrent ? 'bg-accent text-button-text' : 'bg-surface/70 text-text-secondary',
+                    )}
+                  >
+                    {i}
+                  </span>
+                  <span className={clsx('flex-1 min-w-0 truncate text-xs', isCurrent ? 'font-medium' : 'font-normal')}>
+                    {displayLabel}
+                  </span>
+                  <span className="shrink-0 text-[10px] tabular-nums opacity-50">
+                    {formatHistoryTime(times[i], i18n.language)}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

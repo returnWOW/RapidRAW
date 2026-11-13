@@ -26,9 +26,15 @@ import { calculateAutoCropForRotation, calculateCenteredCrop } from '../utils/cr
 import { CompareMode, Invokes, Option, Panel, SelectedImage } from '../components/ui/AppProperties';
 import { globalImageCache } from '../utils/ImageLRUCache';
 import { getDevicePixelRatio } from '../utils/displayScale';
+import { areHistoryStatesEqual } from '../utils/editHistory';
 
-export const debouncedSetHistory = debounce((newAdj: Adjustments, label?: string) => {
-  useEditorStore.getState().pushHistory(newAdj, label);
+export const debouncedSetHistory = debounce((newAdj: Adjustments, label: string | undefined, path: string | null) => {
+  const state = useEditorStore.getState();
+  // Guard against the debounce firing after the user switched images or
+  // undid the change that scheduled it.
+  if (path && state.historyPath !== path) return;
+  if (!areHistoryStatesEqual(state.adjustments, newAdj)) return;
+  state.pushHistory(newAdj, label, path);
 }, 500);
 
 export const debouncedSave = debounce((path: string, adjustmentsToSave: Adjustments) => {
@@ -122,8 +128,14 @@ const getCompareState = (mode: CompareMode, adjustments: Adjustments) =>
     : { showOriginal: false, previewOverride: null, compareView: mode };
 
 export const reloadAdjustmentsForPaths = async (paths: string[]) => {
-  const { selectedImage, setEditor, resetHistory } = useEditorStore.getState();
+  const { selectedImage, setEditor, resetHistory, forgetImageHistory } = useEditorStore.getState();
   const { libraryActivePath, setLibrary } = useLibraryStore.getState();
+
+  // Paths that were changed behind the editor's back no longer match their
+  // stored timeline, so drop it instead of restoring stale steps later.
+  const otherPaths = selectedImage ? paths.filter((path) => path !== selectedImage.path) : paths;
+  if (otherPaths.length > 0) forgetImageHistory(otherPaths);
+
   if (selectedImage && paths.includes(selectedImage.path)) {
     const meta: any = await invoke(Invokes.LoadMetadata, { path: selectedImage.path });
     if (meta.adjustments && !meta.adjustments.is_null) {
@@ -146,7 +158,7 @@ export const applyCrop = () => {
 };
 
 export const cancelCrop = () => {
-  const { cropSessionSnapshot, selectedImage, adjustments, setEditor } = useEditorStore.getState();
+  const { cropSessionSnapshot, selectedImage, adjustments, showOriginal, setEditor } = useEditorStore.getState();
   applyCrop();
   if (cropSessionSnapshot && cropSessionSnapshot.path === (selectedImage?.path ?? null)) {
     const { geometry } = cropSessionSnapshot;
@@ -154,14 +166,13 @@ export const cancelCrop = () => {
       (key) => JSON.stringify(adjustments[key]) !== JSON.stringify(geometry[key]),
     );
     if (hasChanged) {
-      setEditor((state) => {
-        const newAdjustments = { ...state.adjustments, ...geometry };
-        debouncedSetHistory(newAdjustments);
-        return {
-          adjustments: newAdjustments,
-          ...(state.showOriginal ? { showOriginal: false, previewOverride: null } : {}),
-        };
+      const newAdjustments = { ...adjustments, ...geometry };
+      setEditor({
+        adjustments: newAdjustments,
+        historyDirty: true,
+        ...(showOriginal ? { showOriginal: false, previewOverride: null } : {}),
       });
+      debouncedSetHistory(newAdjustments, undefined, selectedImage?.path ?? null);
     }
   }
 };
@@ -174,17 +185,25 @@ export function useEditorActions() {
     (value: Partial<Adjustments> | ((prev: Adjustments) => Adjustments), label?: string) => {
       // A labelled action gets its own history step instead of merging with pending slider edits.
       if (label) debouncedSetHistory.flush();
-      setEditor((state) => {
-        const prev = state.adjustments;
-        const newAdjustments = typeof value === 'function' ? value(prev) : { ...prev, ...value };
-        if (newAdjustments === prev) return state;
-        debouncedSetHistory(newAdjustments, label);
-        return {
-          adjustments: newAdjustments,
-          ...(state.showOriginal ? { showOriginal: false, previewOverride: null } : {}),
-        };
+
+      const state = useEditorStore.getState();
+      const prev = state.adjustments;
+      const newAdjustments = typeof value === 'function' ? value(prev) : { ...prev, ...value };
+      if (newAdjustments === prev) return;
+
+      const path = state.selectedImage?.path ?? null;
+      const isRealEdit = !areHistoryStatesEqual(prev, newAdjustments);
+
+      setEditor({
+        adjustments: newAdjustments,
+        ...(isRealEdit ? { historyDirty: true } : {}),
+        ...(state.showOriginal ? { showOriginal: false, previewOverride: null } : {}),
       });
-      if (label) debouncedSetHistory.flush();
+
+      if (isRealEdit) {
+        debouncedSetHistory(newAdjustments, label, path);
+        if (label) debouncedSetHistory.flush();
+      }
     },
     [setEditor],
   );
@@ -324,7 +343,7 @@ export function useEditorActions() {
   const handleResetAdjustments = useCallback(
     (paths?: string[]) => {
       const { multiSelectedPaths, libraryActivePath, setLibrary } = useLibraryStore.getState();
-      const { selectedImage, resetHistory } = useEditorStore.getState();
+      const { selectedImage, forgetImageHistory, pushHistory } = useEditorStore.getState();
       const pathsToReset = paths || multiSelectedPaths;
       if (pathsToReset.length === 0) return;
 
@@ -335,15 +354,21 @@ export function useEditorActions() {
         .then(() => {
           if (libraryActivePath && pathsToReset.includes(libraryActivePath))
             setLibrary({ libraryActiveAdjustments: { ...INITIAL_ADJUSTMENTS } });
+
+          const otherPaths = pathsToReset.filter((path) => path !== selectedImage?.path);
+          if (otherPaths.length > 0) forgetImageHistory(otherPaths);
+
           if (selectedImage && pathsToReset.includes(selectedImage.path)) {
             const resetData = { ...INITIAL_ADJUSTMENTS, aiPatches: [] };
-            resetHistory(resetData);
-            setEditor({ adjustments: resetData });
+            setEditor({ adjustments: resetData, historyDirty: false });
+            // Reset stays undoable: the step is appended instead of wiping
+            // the timeline, and undo writes the previous edit back.
+            pushHistory(resetData, t('contextMenus.editor.resetAdjustments'), selectedImage.path);
           }
         })
         .catch((err) => toast.error(`Failed to reset adjustments: ${err}`));
     },
-    [setEditor],
+    [setEditor, t],
   );
 
   const handleAutoLensCorrection = useCallback((paths?: string[]) => {

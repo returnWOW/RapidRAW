@@ -304,9 +304,10 @@ export function useAppContextMenus(latestProps: UseAppContextMenusProps) {
         adjustments,
         history,
         historyIndex,
+        historyDirty,
         undo,
         redo,
-        resetHistory,
+        pushHistory,
         copiedAdjustments,
         setEditor,
       } = useEditorStore.getState();
@@ -315,8 +316,8 @@ export function useAppContextMenus(latestProps: UseAppContextMenusProps) {
 
       if (!selectedImage) return;
 
-      const canUndo = historyIndex > 0;
-      const canRedo = historyIndex < history.length - 1;
+      const canUndo = historyIndex > 0 || historyDirty;
+      const canRedo = !historyDirty && historyIndex < history.length - 1;
       const commonTags = getCommonTags([selectedImage.path]);
 
       const options: Array<Option> = [
@@ -478,11 +479,9 @@ export function useAppContextMenus(latestProps: UseAppContextMenusProps) {
               icon: Check,
               isDestructive: true,
               onClick: () => {
-                resetHistory({
-                  ...INITIAL_ADJUSTMENTS,
-                  aiPatches: [],
-                });
-                setEditor({ adjustments: { ...INITIAL_ADJUSTMENTS, aiPatches: [] } });
+                const resetData = { ...INITIAL_ADJUSTMENTS, aiPatches: [] };
+                setEditor({ adjustments: resetData, historyDirty: false });
+                pushHistory(resetData, t('contextMenus.editor.resetAdjustments'), selectedImage.path);
               },
             },
           ],
