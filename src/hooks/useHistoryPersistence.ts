@@ -44,7 +44,9 @@ export function useHistoryPersistence() {
 
     const unsubscribe = useEditorStore.subscribe((state, previous) => {
       // Write the image that was just left before handling the new one.
-      if (previous.historyPath && previous.historyPath !== state.historyPath) {
+      // A timeline that is still being hydrated is skipped: it is only a
+      // provisional one-step placeholder and would overwrite the saved one.
+      if (previous.historyPath && previous.historyPath !== state.historyPath && !previous.historyHydrating) {
         schedule(previous.historyPath, {
           history: previous.history,
           labels: previous.historyLabels,
@@ -60,7 +62,7 @@ export function useHistoryPersistence() {
         state.historyTimes !== previous.historyTimes ||
         state.historyIndex !== previous.historyIndex;
 
-      if (state.historyPath && timelineChanged) {
+      if (state.historyPath && !state.historyHydrating && timelineChanged) {
         schedule(state.historyPath, {
           history: state.history,
           labels: state.historyLabels,

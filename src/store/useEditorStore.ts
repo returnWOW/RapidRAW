@@ -73,6 +73,10 @@ interface EditorState {
   historyIndex: number;
   // true while the newest change is still waiting for the debounced push
   historyDirty: boolean;
+  // true while the persisted timeline for the current image is still being
+  // loaded; persistence must stay off until this becomes false, otherwise a
+  // fresh one-step timeline can overwrite the saved history on startup
+  historyHydrating: boolean;
   // image the current timeline belongs to, and the timelines kept for
   // images switched away from earlier in the session
   historyPath: string | null;
@@ -156,15 +160,12 @@ interface EditorState {
   endImageHistory: (fallback: Adjustments) => void;
 }
 
-export const debouncedSetHistory = debounce(
-  (newAdj: Adjustments, label: string | undefined, path: string | null) => {
-    const state = useEditorStore.getState();
-    if (path && state.historyPath !== path) return;
-    if (!areHistoryStatesEqual(state.adjustments, newAdj)) return;
-    state.pushHistory(newAdj, label, path);
-  },
-  500,
-);
+export const debouncedSetHistory = debounce((newAdj: Adjustments, label: string | undefined, path: string | null) => {
+  const state = useEditorStore.getState();
+  if (path && state.historyPath !== path) return;
+  if (!areHistoryStatesEqual(state.adjustments, newAdj)) return;
+  state.pushHistory(newAdj, label, path);
+}, 500);
 
 type CanvasToolState = Pick<
   EditorState,
@@ -188,6 +189,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   historyTimes: [Date.now()],
   historyIndex: 0,
   historyDirty: false,
+  historyHydrating: false,
   historyPath: null,
   historyByPath: {},
 
@@ -332,6 +334,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         historyTimes: [Date.now()],
         historyIndex: 0,
         historyDirty: false,
+        historyHydrating: false,
         adjustments: initialState,
         ...(state.cropSessionSnapshot
           ? {
@@ -367,7 +370,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       if (state.historyPath === path) return state;
 
       const byPath = { ...state.historyByPath };
-      if (state.historyPath) {
+      if (state.historyPath && !state.historyHydrating) {
         byPath[state.historyPath] = {
           history: state.history,
           labels: state.historyLabels,
@@ -390,6 +393,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           historyTimes: saved.times,
           historyIndex: saved.index,
           historyDirty: false,
+          historyHydrating: false,
           adjustments: saved.history[saved.index] ?? initial,
         };
       }
@@ -403,6 +407,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         historyTimes: [Date.now()],
         historyIndex: 0,
         historyDirty: false,
+        historyHydrating: true,
         adjustments: initial,
       };
     }),
@@ -415,28 +420,57 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   hydrateImageHistory: async (path) => {
     const state = get();
     if (state.historyPath !== path) return;
-    if (state.historyByPath[path]) return;
-    if (state.history.length > 1 || state.historyDirty) return;
 
-    const saved = await loadImageHistory(path);
-    if (!saved || saved.history.length === 0) return;
+    const stopHydrating = () => {
+      if (get().historyPath === path && get().historyHydrating) {
+        set({ historyHydrating: false });
+      }
+    };
 
-    const current = get();
-    if (current.historyPath !== path || current.history.length > 1 || current.historyDirty) return;
-
-    let index = saved.history.findIndex((entry) => areHistoryStatesEqual(entry, current.adjustments));
-    if (index < 0) {
-      // The sidecar no longer matches the stored timeline (the image was
-      // reset or edited by another application). Keep the fresh state.
-      void deleteImageHistories([path]);
+    if (state.historyByPath[path]) {
+      stopHydrating();
+      return;
+    }
+    if (state.history.length > 1 || state.historyDirty) {
+      stopHydrating();
       return;
     }
 
-    let history = saved.history;
-    let labels = saved.labels;
-    let times = saved.times;
-    if (history.length > MAX_HISTORY_STEPS) {
-      const overflow = history.length - MAX_HISTORY_STEPS;
+    const saved = await loadImageHistory(path);
+
+    const current = get();
+    if (current.historyPath !== path) return;
+    if (current.history.length > 1 || current.historyDirty) {
+      stopHydrating();
+      return;
+    }
+    if (!saved || saved.history.length === 0) {
+      stopHydrating();
+      return;
+    }
+
+    let history = [...saved.history];
+    let labels = [...saved.labels];
+    let times = [...saved.times];
+
+    // If the image's current sidecar no longer matches a saved step (for
+    // example after an app upgrade, a reset, or an edit made by another
+    // tool), keep the old timeline and append the current state instead of
+    // throwing the user's history away.
+    let index = history.findIndex((entry) => areHistoryStatesEqual(entry, current.adjustments));
+    if (index < 0) {
+      const previous = history[history.length - 1];
+      history.push(current.adjustments);
+      labels.push(previous ? describeHistoryChange(previous, current.adjustments) : '');
+      times.push(Date.now());
+      index = history.length - 1;
+    }
+
+    while (labels.length < history.length) labels.push('');
+    while (times.length < history.length) times.push(Date.now());
+
+    const overflow = history.length - MAX_HISTORY_STEPS;
+    if (overflow > 0) {
       history = history.slice(overflow);
       labels = labels.slice(overflow);
       times = times.slice(overflow);
@@ -449,6 +483,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       historyTimes: times,
       historyIndex: index,
       historyDirty: false,
+      historyHydrating: false,
       adjustments: mergeHistoryUiState(history[index], current.adjustments),
     });
   },
@@ -490,6 +525,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
               historyTimes: [Date.now()],
               historyIndex: 0,
               historyDirty: false,
+              historyHydrating: false,
             }
           : {}),
       };
@@ -524,7 +560,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   endImageHistory: (fallback) =>
     set((state) => {
       const byPath = { ...state.historyByPath };
-      if (state.historyPath) {
+      if (state.historyPath && !state.historyHydrating) {
         byPath[state.historyPath] = {
           history: state.history,
           labels: state.historyLabels,
@@ -541,6 +577,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         historyTimes: [Date.now()],
         historyIndex: 0,
         historyDirty: false,
+        historyHydrating: false,
         adjustments: fallback,
       };
     }),
