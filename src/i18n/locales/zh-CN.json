@@ -2390,6 +2390,8 @@
       "redo": "重做",
       "noImage": "选择一张图片以查看其编辑历史",
       "noEdits": "暂无编辑记录",
+      "showNewestFirst": "切换为最新在上",
+      "showOldestFirst": "切换为最早在上",
       "steps": "{{count}} 条记录",
       "steps_other": "{{count}} 条记录"
     },

@@ -2396,6 +2396,8 @@
       "redo": "Redo",
       "noImage": "Select an image to see its edit history",
       "noEdits": "No edits yet",
+      "showNewestFirst": "Show newest first",
+      "showOldestFirst": "Show oldest first",
       "steps": "{{count}} steps",
       "steps_one": "{{count}} step",
       "steps_other": "{{count}} steps"

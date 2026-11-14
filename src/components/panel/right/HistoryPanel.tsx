@@ -1,10 +1,22 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { History as HistoryIcon, Redo, Undo } from 'lucide-react';
+import { ArrowDownWideNarrow, ArrowUpNarrowWide, History as HistoryIcon, Redo, Undo } from 'lucide-react';
 import clsx from 'clsx';
 import { useEditorStore } from '../../../store/useEditorStore';
 import Text from '../../ui/Text';
 import { TextColors, TextVariants } from '../../../types/typography';
+
+type HistoryOrder = 'asc' | 'desc';
+
+const HISTORY_ORDER_KEY = 'rapidraw.history.order';
+
+const readHistoryOrder = (): HistoryOrder => {
+  try {
+    return localStorage.getItem(HISTORY_ORDER_KEY) === 'asc' ? 'asc' : 'desc';
+  } catch {
+    return 'desc';
+  }
+};
 
 const formatHistoryTime = (timestamp: number | undefined, locale: string) => {
   if (!timestamp) return '';
@@ -27,6 +39,24 @@ export default function HistoryPanel() {
   const redo = useEditorStore((s) => s.redo);
   const goToHistoryIndex = useEditorStore((s) => s.goToHistoryIndex);
   const listRef = useRef<HTMLDivElement>(null);
+  const [order, setOrder] = useState<HistoryOrder>(() => readHistoryOrder());
+
+  const rowIndices = useMemo(() => {
+    const indices = labels.map((_, i) => i);
+    return order === 'desc' ? indices.reverse() : indices;
+  }, [labels, order]);
+
+  const toggleOrder = () => {
+    setOrder((previous) => {
+      const next: HistoryOrder = previous === 'desc' ? 'asc' : 'desc';
+      try {
+        localStorage.setItem(HISTORY_ORDER_KEY, next);
+      } catch {
+        // Storage can be unavailable; the toggle still works for this session.
+      }
+      return next;
+    });
+  };
 
   const fileName = useMemo(() => {
     if (!selectedImage?.path) return '';
@@ -36,7 +66,7 @@ export default function HistoryPanel() {
 
   useEffect(() => {
     listRef.current?.querySelector(`[data-history-index="${index}"]`)?.scrollIntoView({ block: 'nearest' });
-  }, [index, labels.length]);
+  }, [index, labels.length, order]);
 
   if (!selectedImage) {
     return (
@@ -73,6 +103,14 @@ export default function HistoryPanel() {
         </div>
         <div className="flex items-center gap-1 shrink-0">
           <button
+            onClick={toggleOrder}
+            className="p-2 rounded-full hover:bg-surface text-text-secondary hover:text-text-primary transition-colors"
+            data-tooltip={order === 'desc' ? t('ui.history.showOldestFirst') : t('ui.history.showNewestFirst')}
+            aria-label={order === 'desc' ? t('ui.history.showOldestFirst') : t('ui.history.showNewestFirst')}
+          >
+            {order === 'desc' ? <ArrowDownWideNarrow size={18} /> : <ArrowUpNarrowWide size={18} />}
+          </button>
+          <button
             onClick={undo}
             disabled={!canUndo}
             className="p-2 rounded-full hover:bg-surface text-text-secondary hover:text-text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
@@ -101,7 +139,8 @@ export default function HistoryPanel() {
           </div>
         ) : (
           <div className="flex flex-col gap-0.5">
-            {labels.map((label, i) => {
+            {rowIndices.map((i) => {
+              const label = labels[i];
               const isCurrent = i === index;
               const isFuture = i > index;
               const displayLabel = label || t('ui.history.initial');
