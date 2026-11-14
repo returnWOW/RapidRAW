@@ -6,11 +6,12 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+use glam::{Mat3, Vec2, Vec3};
 use image::codecs::jpeg::{JpegEncoder, PixelDensity};
 use image::codecs::png::PngEncoder;
 use image::{
-    DynamicImage, GenericImageView, GrayImage, ImageBuffer, ImageEncoder, ImageFormat, Luma,
-    imageops,
+    DynamicImage, GenericImageView, GrayImage, ImageBuffer, ImageEncoder, ImageFormat, Luma, Rgb,
+    Rgba, imageops,
 };
 use jxl_encoder::{
     LosslessConfig, LossyConfig, PixelLayout,
@@ -30,8 +31,9 @@ use crate::file_management::{
 use crate::formats::is_raw_file;
 use crate::image_loader::{load_and_composite, load_base_image_from_bytes, prepare_base_image_cow};
 use crate::image_processing::{
-    AllAdjustments, Crop, GpuContext, RenderOptions, RenderOutputPrecision, RenderRequest,
-    get_all_adjustments_from_json, get_or_init_gpu_context, process_and_get_dynamic_image,
+    AllAdjustments, Crop, GpuContext, PRIMARIES_SRGB, RenderOptions, RenderOutputPrecision,
+    RenderRequest, WP_D65, get_all_adjustments_from_json, get_or_init_gpu_context,
+    primaries_to_xyz_matrix, process_and_get_dynamic_image,
     process_and_get_dynamic_image_with_precision, resolve_render_options_from_handle,
 };
 use crate::lut_processing::{
@@ -74,6 +76,15 @@ impl From<TiffBitDepth> for u8 {
     fn from(value: TiffBitDepth) -> Self {
         value as u8
     }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum OutputColorSpace {
+    #[default]
+    Srgb,
+    DisplayP3,
+    AdobeRgb,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -148,6 +159,8 @@ pub struct ExportSettings {
     pub subfolder: Option<String>,
     #[serde(default)]
     pub dpi: Option<u16>,
+    #[serde(default)]
+    pub output_color_space: OutputColorSpace,
 }
 
 #[derive(Clone)]
@@ -1303,6 +1316,167 @@ fn encode_grayscale_to_png(bitmap: &GrayImage) -> Result<Vec<u8>, String> {
 }
 
 pub(crate) const SRGB_ICC_PROFILE: &[u8] = include_bytes!("../icc/sRGB-v2-magic.icc");
+pub(crate) const DISPLAY_P3_ICC_PROFILE: &[u8] = include_bytes!("../icc/DisplayP3-v2-magic.icc");
+pub(crate) const ADOBE_RGB_ICC_PROFILE: &[u8] = include_bytes!("../icc/AdobeRGBCompat-v2.icc");
+
+fn output_icc_profile(space: OutputColorSpace) -> &'static [u8] {
+    match space {
+        OutputColorSpace::Srgb => SRGB_ICC_PROFILE,
+        OutputColorSpace::DisplayP3 => DISPLAY_P3_ICC_PROFILE,
+        OutputColorSpace::AdobeRgb => ADOBE_RGB_ICC_PROFILE,
+    }
+}
+
+fn output_primaries(space: OutputColorSpace) -> [Vec2; 3] {
+    match space {
+        OutputColorSpace::Srgb => PRIMARIES_SRGB,
+        OutputColorSpace::DisplayP3 => [
+            Vec2::new(0.680, 0.320),
+            Vec2::new(0.265, 0.690),
+            Vec2::new(0.150, 0.060),
+        ],
+        OutputColorSpace::AdobeRgb => [
+            Vec2::new(0.640, 0.330),
+            Vec2::new(0.210, 0.710),
+            Vec2::new(0.150, 0.060),
+        ],
+    }
+}
+
+fn srgb_to_linear(value: f32) -> f32 {
+    if value <= 0.04045 {
+        value / 12.92
+    } else {
+        ((value + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+fn linear_to_srgb(value: f32) -> f32 {
+    let value = value.clamp(0.0, 1.0);
+    if value <= 0.003_130_8 {
+        value * 12.92
+    } else {
+        1.055 * value.powf(1.0 / 2.4) - 0.055
+    }
+}
+
+fn linear_to_adobe_rgb(value: f32) -> f32 {
+    value.clamp(0.0, 1.0).powf(1.0 / 2.199_218_75)
+}
+
+fn encode_output_component(value: f32, space: OutputColorSpace) -> f32 {
+    match space {
+        OutputColorSpace::Srgb | OutputColorSpace::DisplayP3 => linear_to_srgb(value),
+        OutputColorSpace::AdobeRgb => linear_to_adobe_rgb(value),
+    }
+}
+
+fn convert_srgb_pixel(
+    r: f32,
+    g: f32,
+    b: f32,
+    matrix: Mat3,
+    space: OutputColorSpace,
+) -> (f32, f32, f32) {
+    let linear = Vec3::new(srgb_to_linear(r), srgb_to_linear(g), srgb_to_linear(b));
+    let target = matrix * linear;
+    (
+        encode_output_component(target.x, space),
+        encode_output_component(target.y, space),
+        encode_output_component(target.z, space),
+    )
+}
+
+fn output_conversion_matrix(space: OutputColorSpace) -> Mat3 {
+    let srgb_to_xyz = primaries_to_xyz_matrix(&PRIMARIES_SRGB, WP_D65);
+    let xyz_to_target = primaries_to_xyz_matrix(&output_primaries(space), WP_D65).inverse();
+    xyz_to_target * srgb_to_xyz
+}
+
+fn to_u8(value: f32) -> u8 {
+    (value.clamp(0.0, 1.0) * 255.0).round() as u8
+}
+
+fn to_u16(value: f32) -> u16 {
+    (value.clamp(0.0, 1.0) * 65535.0).round() as u16
+}
+
+fn convert_output_color_space(image: &DynamicImage, space: OutputColorSpace) -> DynamicImage {
+    if space == OutputColorSpace::Srgb {
+        return image.clone();
+    }
+    let matrix = output_conversion_matrix(space);
+
+    match image {
+        DynamicImage::ImageRgb8(buffer) => {
+            let mut out: ImageBuffer<Rgb<u8>, Vec<u8>> =
+                ImageBuffer::new(buffer.width(), buffer.height());
+            for (x, y, pixel) in buffer.enumerate_pixels() {
+                let (r, g, b) = convert_srgb_pixel(
+                    pixel[0] as f32 / 255.0,
+                    pixel[1] as f32 / 255.0,
+                    pixel[2] as f32 / 255.0,
+                    matrix,
+                    space,
+                );
+                out.put_pixel(x, y, Rgb([to_u8(r), to_u8(g), to_u8(b)]));
+            }
+            DynamicImage::ImageRgb8(out)
+        }
+        DynamicImage::ImageRgba8(buffer) => {
+            let mut out: ImageBuffer<Rgba<u8>, Vec<u8>> =
+                ImageBuffer::new(buffer.width(), buffer.height());
+            for (x, y, pixel) in buffer.enumerate_pixels() {
+                let (r, g, b) = convert_srgb_pixel(
+                    pixel[0] as f32 / 255.0,
+                    pixel[1] as f32 / 255.0,
+                    pixel[2] as f32 / 255.0,
+                    matrix,
+                    space,
+                );
+                out.put_pixel(x, y, Rgba([to_u8(r), to_u8(g), to_u8(b), pixel[3]]));
+            }
+            DynamicImage::ImageRgba8(out)
+        }
+        DynamicImage::ImageRgb16(buffer) => {
+            let mut out: ImageBuffer<Rgb<u16>, Vec<u16>> =
+                ImageBuffer::new(buffer.width(), buffer.height());
+            for (x, y, pixel) in buffer.enumerate_pixels() {
+                let (r, g, b) = convert_srgb_pixel(
+                    pixel[0] as f32 / 65535.0,
+                    pixel[1] as f32 / 65535.0,
+                    pixel[2] as f32 / 65535.0,
+                    matrix,
+                    space,
+                );
+                out.put_pixel(x, y, Rgb([to_u16(r), to_u16(g), to_u16(b)]));
+            }
+            DynamicImage::ImageRgb16(out)
+        }
+        DynamicImage::ImageRgba16(buffer) => {
+            let mut out: ImageBuffer<Rgba<u16>, Vec<u16>> =
+                ImageBuffer::new(buffer.width(), buffer.height());
+            for (x, y, pixel) in buffer.enumerate_pixels() {
+                let (r, g, b) = convert_srgb_pixel(
+                    pixel[0] as f32 / 65535.0,
+                    pixel[1] as f32 / 65535.0,
+                    pixel[2] as f32 / 65535.0,
+                    matrix,
+                    space,
+                );
+                out.put_pixel(x, y, Rgba([to_u16(r), to_u16(g), to_u16(b), pixel[3]]));
+            }
+            DynamicImage::ImageRgba16(out)
+        }
+        _ => {
+            if image.color().has_alpha() {
+                convert_output_color_space(&DynamicImage::ImageRgba16(image.to_rgba16()), space)
+            } else {
+                convert_output_color_space(&DynamicImage::ImageRgb16(image.to_rgb16()), space)
+            }
+        }
+    }
+}
 
 fn encode_image_to_bytes(
     image: &DynamicImage,
@@ -1311,10 +1485,29 @@ fn encode_image_to_bytes(
     tiff_metadata: Option<&little_exif::metadata::Metadata>,
 ) -> Result<Vec<u8>, String> {
     let jpeg_quality = export_settings.jpeg_quality;
+    let output_format = output_format.to_lowercase();
+    let color_space = export_settings.output_color_space;
+    let supports_color_space = matches!(
+        output_format.as_str(),
+        "jpg" | "jpeg" | "png" | "tif" | "tiff"
+    );
+    if color_space != OutputColorSpace::Srgb && !supports_color_space {
+        return Err(
+            "Output color space is only supported for JPEG, PNG and TIFF exports.".to_string(),
+        );
+    }
+    let converted_image = if color_space == OutputColorSpace::Srgb {
+        None
+    } else {
+        Some(convert_output_color_space(image, color_space))
+    };
+    let image = converted_image.as_ref().unwrap_or(image);
+    let icc_profile = output_icc_profile(color_space);
+
     let mut image_bytes = Vec::new();
     let mut cursor = Cursor::new(&mut image_bytes);
 
-    match output_format.to_lowercase().as_str() {
+    match output_format.as_str() {
         "jxl" => {
             let (width, height) = image.dimensions();
             let has_alpha = image.color().has_alpha();
@@ -1363,7 +1556,7 @@ fn encode_image_to_bytes(
                 .map_or_else(|| Cow::Owned(image.to_rgb8()), Cow::Borrowed);
             let mut encoder = JpegEncoder::new_with_quality(&mut cursor, jpeg_quality);
             encoder
-                .set_icc_profile(SRGB_ICC_PROFILE.to_vec())
+                .set_icc_profile(icc_profile.to_vec())
                 .map_err(|e| e.to_string())?;
             if let Some(dpi) = export_settings.dpi {
                 encoder.set_pixel_density(PixelDensity::dpi(dpi));
@@ -1383,7 +1576,7 @@ fn encode_image_to_bytes(
 
             let mut encoder = PngEncoder::new(&mut cursor);
             encoder
-                .set_icc_profile(SRGB_ICC_PROFILE.to_vec())
+                .set_icc_profile(icc_profile.to_vec())
                 .map_err(|e| e.to_string())?;
             image_to_encode
                 .write_with_encoder(encoder)
@@ -1401,7 +1594,7 @@ fn encode_image_to_bytes(
                 image,
                 samples,
                 tiff_metadata,
-                Some(SRGB_ICC_PROFILE),
+                Some(icc_profile),
                 export_settings.dpi,
             );
         }
@@ -2274,6 +2467,7 @@ pub async fn run_headless_export(
     let export_settings = ExportSettings {
         jpeg_quality: session.quality,
         tiff_bit_depth: session.tiff_bit_depth,
+        output_color_space: OutputColorSpace::Srgb,
         resize: None,
         border: None,
         pad: None,
@@ -2628,4 +2822,78 @@ pub async fn estimate_export_sizes(
     };
 
     Ok(single_image_extrapolated_size * paths.len())
+}
+
+#[cfg(test)]
+mod color_management_tests {
+    use super::*;
+    use image::{Rgb, RgbImage};
+
+    fn solid(color: [u8; 3]) -> DynamicImage {
+        DynamicImage::ImageRgb8(RgbImage::from_pixel(1, 1, Rgb(color)))
+    }
+
+    fn pixel(image: &DynamicImage) -> [u8; 3] {
+        let rgb = image.to_rgb8();
+        rgb.get_pixel(0, 0).0
+    }
+
+    #[test]
+    fn srgb_is_unchanged() {
+        let source = solid([12, 200, 77]);
+        let converted = convert_output_color_space(&source, OutputColorSpace::Srgb);
+        assert_eq!(pixel(&converted), [12, 200, 77]);
+    }
+
+    #[test]
+    fn white_and_black_are_preserved() {
+        for space in [OutputColorSpace::DisplayP3, OutputColorSpace::AdobeRgb] {
+            assert_eq!(
+                pixel(&convert_output_color_space(&solid([255, 255, 255]), space)),
+                [255, 255, 255]
+            );
+            assert_eq!(
+                pixel(&convert_output_color_space(&solid([0, 0, 0]), space)),
+                [0, 0, 0]
+            );
+        }
+    }
+
+    #[test]
+    fn p3_red_is_less_saturated_than_srgb_red() {
+        let converted = pixel(&convert_output_color_space(
+            &solid([255, 0, 0]),
+            OutputColorSpace::DisplayP3,
+        ));
+        assert!(
+            converted[0] < 255,
+            "red channel should fit inside P3: {:?}",
+            converted
+        );
+        assert!(
+            converted[1] > 0,
+            "P3 red should need some green: {:?}",
+            converted
+        );
+    }
+
+    #[test]
+    fn adobe_red_is_less_saturated_than_srgb_red() {
+        let converted = pixel(&convert_output_color_space(
+            &solid([255, 0, 0]),
+            OutputColorSpace::AdobeRgb,
+        ));
+        assert!(
+            converted[0] < 255,
+            "red channel should fit inside Adobe RGB: {:?}",
+            converted
+        );
+    }
+
+    #[test]
+    fn embedded_profiles_are_present() {
+        assert!(output_icc_profile(OutputColorSpace::Srgb).len() > 100);
+        assert!(output_icc_profile(OutputColorSpace::DisplayP3).len() > 100);
+        assert!(output_icc_profile(OutputColorSpace::AdobeRgb).len() > 100);
+    }
 }

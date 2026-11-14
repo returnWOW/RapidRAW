@@ -38,6 +38,12 @@ export const isUniqueFilenameTemplate = (template: string): boolean =>
 
 export type TiffBitDepth = 8 | 16;
 
+export enum OutputColorSpace {
+  Srgb = 'srgb',
+  DisplayP3 = 'displayP3',
+  AdobeRgb = 'adobeRgb',
+}
+
 export const DEFAULT_EXPORT_DPI = 96;
 export const MAX_EXPORT_DPI = 65535;
 
@@ -45,6 +51,7 @@ export interface ExportSettings {
   filenameTemplate: string | null;
   jpegQuality: number;
   tiffBitDepth: TiffBitDepth;
+  outputColorSpace: OutputColorSpace;
   keepMetadata: boolean;
   preserveTimestamps: boolean;
   resize: {
@@ -135,6 +142,7 @@ export interface ExportPreset {
   fileFormat: string;
   jpegQuality: number;
   tiffBitDepth?: TiffBitDepth;
+  outputColorSpace?: OutputColorSpace;
   dpi?: number;
   enableResize: boolean;
   resizeMode: string;

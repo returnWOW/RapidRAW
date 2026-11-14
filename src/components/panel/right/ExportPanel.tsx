@@ -22,6 +22,7 @@ import {
   ExportState,
   FileFormats,
   MAX_EXPORT_DPI,
+  OutputColorSpace,
   TiffBitDepth,
   WatermarkAnchor,
 } from '../../ui/ExportImportProperties';
@@ -252,6 +253,15 @@ export default function ExportPanel({
     [t],
   );
 
+  const outputColorSpaceOptions = useMemo(
+    () => [
+      { label: t('export.file.colorSpaces.srgb'), value: OutputColorSpace.Srgb },
+      { label: t('export.file.colorSpaces.displayP3'), value: OutputColorSpace.DisplayP3 },
+      { label: t('export.file.colorSpaces.adobeRgb'), value: OutputColorSpace.AdobeRgb },
+    ],
+    [t],
+  );
+
   const {
     fileFormat,
     setFileFormat,
@@ -259,6 +269,8 @@ export default function ExportPanel({
     setJpegQuality,
     tiffBitDepth,
     setTiffBitDepth,
+    outputColorSpace,
+    setOutputColorSpace,
     dpi,
     setDpi,
     enableResize,
@@ -318,6 +330,14 @@ export default function ExportPanel({
     subfolder,
     setSubfolder,
   } = useExportSettings();
+
+  useEffect(() => {
+    const supportsColorSpace =
+      fileFormat === FileFormats.Jpeg || fileFormat === FileFormats.Png || fileFormat === FileFormats.Tiff;
+    if (!supportsColorSpace && outputColorSpace !== OutputColorSpace.Srgb) {
+      setOutputColorSpace(OutputColorSpace.Srgb);
+    }
+  }, [fileFormat, outputColorSpace, setOutputColorSpace]);
 
   const adjustmentsRef = useRef(useEditorStore.getState().adjustments);
 
@@ -495,6 +515,7 @@ export default function ExportPanel({
       filenameTemplate,
       jpegQuality,
       tiffBitDepth,
+      outputColorSpace,
       keepMetadata,
       preserveTimestamps,
       preserveFolders,
@@ -542,6 +563,7 @@ export default function ExportPanel({
     fileFormat,
     jpegQuality,
     tiffBitDepth,
+    outputColorSpace,
     enableResize,
     resizeMode,
     resizeValue,
@@ -592,6 +614,7 @@ export default function ExportPanel({
       filenameTemplate,
       jpegQuality,
       tiffBitDepth,
+      outputColorSpace,
       keepMetadata,
       preserveTimestamps,
       preserveFolders,
@@ -766,6 +789,20 @@ export default function ExportPanel({
                     step={1}
                     value={jpegQuality}
                     fillOrigin="min"
+                  />
+                </div>
+              )}
+              {[FileFormats.Jpeg, FileFormats.Png, FileFormats.Tiff].includes(fileFormat as FileFormats) && (
+                <div className={isExporting ? 'opacity-50 pointer-events-none' : ''}>
+                  <Text variant={TextVariants.label} className="mb-1">
+                    {t('export.file.outputColorSpace')}
+                  </Text>
+                  <Dropdown
+                    options={outputColorSpaceOptions}
+                    value={outputColorSpace}
+                    onChange={(value) => setOutputColorSpace(value as OutputColorSpace)}
+                    disabled={isExporting}
+                    className="w-full"
                   />
                 </div>
               )}

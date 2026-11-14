@@ -5,7 +5,7 @@ import { exit } from '@tauri-apps/plugin-process';
 import { useProcessStore } from '../store/useProcessStore';
 import { useEditorStore } from '../store/useEditorStore';
 import { Invokes } from '../components/ui/AppProperties';
-import { ExportSettings, Status } from '../components/ui/ExportImportProperties';
+import { ExportSettings, OutputColorSpace, Status } from '../components/ui/ExportImportProperties';
 import { debouncedSave } from './useEditorActions';
 
 /**
@@ -57,6 +57,7 @@ export function useExternalEditSession(handleImageSelect: (path: string) => void
       filenameTemplate: null,
       jpegQuality: session.jpegQuality,
       tiffBitDepth: 16,
+      outputColorSpace: OutputColorSpace.Srgb,
       keepMetadata: true,
       preserveTimestamps: false,
       preserveFolders: false,

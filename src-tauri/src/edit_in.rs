@@ -15,7 +15,7 @@ use tauri::{AppHandle, State};
 use crate::AppState;
 use crate::app_settings::{EditInApp, EditInMode};
 use crate::export_processing::{
-    ExportAdjustmentsMode, ExportSettings, TiffBitDepth, export_images_and_wait,
+    ExportAdjustmentsMode, ExportSettings, OutputColorSpace, TiffBitDepth, export_images_and_wait,
 };
 use crate::file_management::parse_virtual_path;
 use crate::formats::{is_raw_file, is_supported_image_file};
@@ -242,6 +242,7 @@ async fn render_tiff(
     let export_settings = ExportSettings {
         jpeg_quality: 100,
         tiff_bit_depth: TiffBitDepth::Sixteen,
+        output_color_space: OutputColorSpace::Srgb,
         resize: None,
         border: None,
         pad: None,
