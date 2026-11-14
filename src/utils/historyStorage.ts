@@ -15,6 +15,14 @@ export interface HistoryTimeline {
   index: number;
 }
 
+export interface ImageSnapshot {
+  id: string;
+  name: string;
+  time: number;
+  adjustments: Adjustments;
+  historyIndex?: number;
+}
+
 interface StoredStep {
   adjustments: Adjustments;
   label: string;
@@ -29,9 +37,16 @@ interface StoredHistory {
   version: number;
 }
 
+interface StoredSnapshots {
+  path: string;
+  updatedAt: number;
+  snapshots: ImageSnapshot[];
+}
+
 const DB_NAME = 'rapidraw-edit-history';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE = 'timelines';
+const SNAPSHOTS_STORE = 'snapshots';
 const UPDATED_AT_INDEX = 'updatedAt';
 const RECORD_VERSION = 1;
 
@@ -67,6 +82,10 @@ function openDatabase(): Promise<IDBDatabase | null> {
       const db = request.result;
       if (!db.objectStoreNames.contains(STORE)) {
         const store = db.createObjectStore(STORE, { keyPath: 'path' });
+        store.createIndex(UPDATED_AT_INDEX, 'updatedAt');
+      }
+      if (!db.objectStoreNames.contains(SNAPSHOTS_STORE)) {
+        const store = db.createObjectStore(SNAPSHOTS_STORE, { keyPath: 'path' });
         store.createIndex(UPDATED_AT_INDEX, 'updatedAt');
       }
     };
@@ -217,6 +236,82 @@ export function moveImageHistory(oldPath: string, newPath: string): Promise<void
     const tx = db.transaction(STORE, 'readwrite');
     const store = tx.objectStore(STORE);
     const record = (await requestToPromise(store.get(oldPath))) as StoredHistory | undefined;
+    if (record) {
+      store.put({ ...record, path: newPath, updatedAt: Date.now() });
+      store.delete(oldPath);
+    }
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  });
+}
+
+/** Loads the named snapshots saved for an image. */
+export async function loadImageSnapshots(path: string): Promise<ImageSnapshot[]> {
+  if (!path) return [];
+  const db = await openDatabase();
+  if (!db) return [];
+
+  try {
+    const tx = db.transaction(SNAPSHOTS_STORE, 'readonly');
+    const record = (await requestToPromise(tx.objectStore(SNAPSHOTS_STORE).get(path))) as StoredSnapshots | undefined;
+    return Array.isArray(record?.snapshots) ? record.snapshots : [];
+  } catch (err) {
+    console.warn('Failed to load image snapshots:', err);
+    return [];
+  }
+}
+
+/** Replaces all named snapshots for one image. */
+export function saveImageSnapshots(path: string, snapshots: ImageSnapshot[]): Promise<void> {
+  if (!path) return Promise.resolve();
+  return enqueue(async () => {
+    const db = await openDatabase();
+    if (!db) return;
+    const tx = db.transaction(SNAPSHOTS_STORE, 'readwrite');
+    const store = tx.objectStore(SNAPSHOTS_STORE);
+    if (snapshots.length === 0) {
+      store.delete(path);
+    } else {
+      const record: StoredSnapshots = { path, updatedAt: Date.now(), snapshots };
+      store.put(record);
+    }
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  });
+}
+
+/** Deletes named snapshots for the given image paths. */
+export function deleteImageSnapshots(paths: string[]): Promise<void> {
+  if (paths.length === 0) return Promise.resolve();
+  return enqueue(async () => {
+    const db = await openDatabase();
+    if (!db) return;
+    const tx = db.transaction(SNAPSHOTS_STORE, 'readwrite');
+    const store = tx.objectStore(SNAPSHOTS_STORE);
+    paths.forEach((path) => store.delete(path));
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  });
+}
+
+/** Moves named snapshots when an image is renamed or moved. */
+export function moveImageSnapshots(oldPath: string, newPath: string): Promise<void> {
+  if (!oldPath || !newPath || oldPath === newPath) return Promise.resolve();
+  return enqueue(async () => {
+    const db = await openDatabase();
+    if (!db) return;
+    const tx = db.transaction(SNAPSHOTS_STORE, 'readwrite');
+    const store = tx.objectStore(SNAPSHOTS_STORE);
+    const record = (await requestToPromise(store.get(oldPath))) as StoredSnapshots | undefined;
     if (record) {
       store.put({ ...record, path: newPath, updatedAt: Date.now() });
       store.delete(oldPath);

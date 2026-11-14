@@ -11,6 +11,7 @@ import { useSettingsStore } from '../store/useSettingsStore';
 import { ImageFlag, Invokes } from '../components/ui/AppProperties';
 import { Status } from '../components/ui/ExportImportProperties';
 import { debouncedSave, debouncedSetHistory } from './useEditorActions';
+import { deleteImageSnapshots, moveImageSnapshots } from '../utils/historyStorage';
 
 export const transferFiles = (kind: JobKind.Copy | JobKind.Move, sourcePaths: string[], destinationFolder: string) =>
   useProcessStore
@@ -114,6 +115,7 @@ export function useFileOperations(
         }
 
         useEditorStore.getState().forgetImageHistory(deletedHistoryPaths);
+        void deleteImageSnapshots(deletedHistoryPaths);
       } catch (err) {
         console.error('Failed to delete files:', err);
         toast.error(`Failed to delete files: ${err}`);
@@ -287,6 +289,7 @@ export function useFileOperations(
             const newPath = newPaths[index];
             if (newPath && newPath !== oldPath) {
               useEditorStore.getState().renameImageHistory(oldPath, newPath);
+              void moveImageSnapshots(oldPath, newPath);
             }
           });
 

@@ -1,8 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ArrowDownWideNarrow, ArrowUpNarrowWide, History as HistoryIcon, Redo, Undo } from 'lucide-react';
+import {
+  ArrowDownWideNarrow,
+  ArrowUpNarrowWide,
+  BookmarkPlus,
+  Check,
+  History as HistoryIcon,
+  Redo,
+  Trash2,
+  Undo,
+  X,
+} from 'lucide-react';
 import clsx from 'clsx';
 import { useEditorStore } from '../../../store/useEditorStore';
+import { ImageSnapshot, loadImageSnapshots, saveImageSnapshots } from '../../../utils/historyStorage';
 import Text from '../../ui/Text';
 import { TextColors, TextVariants } from '../../../types/typography';
 
@@ -40,6 +51,9 @@ export default function HistoryPanel() {
   const goToHistoryIndex = useEditorStore((s) => s.goToHistoryIndex);
   const listRef = useRef<HTMLDivElement>(null);
   const [order, setOrder] = useState<HistoryOrder>(() => readHistoryOrder());
+  const [snapshots, setSnapshots] = useState<ImageSnapshot[]>([]);
+  const [isNamingSnapshot, setIsNamingSnapshot] = useState(false);
+  const [snapshotName, setSnapshotName] = useState('');
 
   const rowIndices = useMemo(() => {
     const indices = labels.map((_, i) => i);
@@ -63,6 +77,71 @@ export default function HistoryPanel() {
     const cleanPath = selectedImage.path.split('?')[0];
     return cleanPath.split(/[\\/]/).pop() || cleanPath;
   }, [selectedImage?.path]);
+
+  useEffect(() => {
+    let isActive = true;
+    const path = selectedImage?.path;
+    setIsNamingSnapshot(false);
+    setSnapshotName('');
+    setSnapshots([]);
+    if (!path) return;
+
+    loadImageSnapshots(path).then((list) => {
+      if (isActive) setSnapshots(list);
+    });
+    return () => {
+      isActive = false;
+    };
+  }, [selectedImage?.path]);
+
+  const beginSnapshot = () => {
+    setSnapshotName(t('ui.history.snapshotDefaultName', { number: snapshots.length + 1 }));
+    setIsNamingSnapshot(true);
+  };
+
+  const cancelSnapshot = () => {
+    setIsNamingSnapshot(false);
+    setSnapshotName('');
+  };
+
+  const handleSaveSnapshot = async () => {
+    const path = selectedImage?.path;
+    if (!path) return;
+    const name = snapshotName.trim() || t('ui.history.snapshotDefaultName', { number: snapshots.length + 1 });
+    const snapshot: ImageSnapshot = {
+      id: crypto.randomUUID(),
+      name,
+      time: Date.now(),
+      adjustments: JSON.parse(JSON.stringify(useEditorStore.getState().adjustments)),
+      historyIndex: index,
+    };
+    const next = [...snapshots, snapshot];
+    setSnapshots(next);
+    setIsNamingSnapshot(false);
+    setSnapshotName('');
+    await saveImageSnapshots(path, next);
+  };
+
+  const handleDeleteSnapshot = (id: string) => {
+    const path = selectedImage?.path;
+    if (!path) return;
+    const next = snapshots.filter((snapshot) => snapshot.id !== id);
+    setSnapshots(next);
+    void saveImageSnapshots(path, next);
+  };
+
+  const handleRestoreSnapshot = (snapshot: ImageSnapshot) => {
+    const path = selectedImage?.path;
+    if (!path) return;
+    const restored = JSON.parse(JSON.stringify(snapshot.adjustments));
+    useEditorStore.getState().setEditor({
+      adjustments: restored,
+      historyDirty: false,
+      showOriginal: false,
+      previewOverride: null,
+    });
+    useEditorStore.getState().pushHistory(restored, t('ui.history.snapshotLabel', { name: snapshot.name }), path);
+  };
 
   useEffect(() => {
     listRef.current?.querySelector(`[data-history-index="${index}"]`)?.scrollIntoView({ block: 'nearest' });
@@ -130,6 +209,98 @@ export default function HistoryPanel() {
       </div>
 
       <div ref={listRef} className="grow overflow-y-auto p-2 custom-scrollbar">
+        <div className="mb-2">
+          <div className="flex items-center justify-between px-2 py-1">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-text-secondary/80">
+              {t('ui.history.snapshots')}
+            </span>
+            <button
+              onClick={beginSnapshot}
+              className="p-1 rounded-md text-text-secondary hover:bg-surface hover:text-text-primary transition-colors"
+              data-tooltip={t('ui.history.saveSnapshot')}
+              aria-label={t('ui.history.saveSnapshot')}
+            >
+              <BookmarkPlus size={14} />
+            </button>
+          </div>
+
+          {isNamingSnapshot && (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleSaveSnapshot();
+              }}
+              className="flex items-center gap-1 px-2 pb-2"
+            >
+              <input
+                autoFocus
+                value={snapshotName}
+                onChange={(event) => setSnapshotName(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Escape') return;
+                  event.stopPropagation();
+                  cancelSnapshot();
+                }}
+                placeholder={t('ui.history.snapshotName')}
+                className="flex-1 min-w-0 bg-bg-tertiary text-text-primary text-xs rounded-md px-2 py-1 placeholder:text-text-secondary/70 focus:outline-none focus:ring-1 focus:ring-accent"
+              />
+              <button
+                type="submit"
+                className="p-1 rounded-md text-text-secondary hover:bg-surface hover:text-text-primary transition-colors"
+                data-tooltip={t('ui.history.save')}
+              >
+                <Check size={14} />
+              </button>
+              <button
+                type="button"
+                onClick={cancelSnapshot}
+                className="p-1 rounded-md text-text-secondary hover:bg-surface hover:text-text-primary transition-colors"
+                data-tooltip={t('ui.history.cancel')}
+              >
+                <X size={14} />
+              </button>
+            </form>
+          )}
+
+          {snapshots.length === 0 ? (
+            !isNamingSnapshot && (
+              <div className="px-2 pb-1 text-[10px] text-text-secondary/60">{t('ui.history.noSnapshots')}</div>
+            )
+          ) : (
+            <div className="flex flex-col gap-0.5">
+              {snapshots.map((snapshot) => (
+                <div
+                  key={snapshot.id}
+                  className="group flex items-center gap-1 px-2 py-1 rounded-md hover:bg-surface/60 transition-colors"
+                >
+                  <button
+                    onClick={() => handleRestoreSnapshot(snapshot)}
+                    className="flex-1 min-w-0 text-left"
+                    data-tooltip={t('ui.history.restoreSnapshot')}
+                  >
+                    <span className="block truncate text-xs text-text-secondary group-hover:text-text-primary">
+                      {snapshot.name}
+                    </span>
+                    <span className="block text-[10px] text-text-secondary/60 tabular-nums">
+                      {formatHistoryTime(snapshot.time, i18n.language)}
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => handleDeleteSnapshot(snapshot.id)}
+                    className="p-1 rounded-md text-text-secondary opacity-60 md:opacity-0 md:group-hover:opacity-100 hover:text-red-400 transition-all"
+                    data-tooltip={t('ui.history.deleteSnapshot')}
+                    aria-label={t('ui.history.deleteSnapshot')}
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="border-t border-surface/60 mx-2 mb-2" />
+
         {labels.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-2 text-center px-4">
             <HistoryIcon size={20} className="text-text-secondary opacity-50" />
