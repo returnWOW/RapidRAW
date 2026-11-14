@@ -1,11 +1,11 @@
 import { useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { adjustmentsFromMetadata, fetchImageDefaults } from '../utils/developDefaults';
 import { toast } from 'react-toastify';
 import { useEditorStore } from '../store/useEditorStore';
 import { useLibraryStore } from '../store/useLibraryStore';
 import { useSettingsStore } from '../store/useSettingsStore';
-import { Invokes } from '../components/ui/AppProperties';
-import { INITIAL_ADJUSTMENTS, normalizeLoadedAdjustments } from '../utils/adjustments';
+import { Invokes } from '../types/invokes';
 
 export function useImageLoader(cachedEditStateRef: React.RefObject<any>) {
   const selectedImage = useEditorStore((s) => s.selectedImage);
@@ -15,7 +15,6 @@ export function useImageLoader(cachedEditStateRef: React.RefObject<any>) {
   const finalPreviewUrl = useEditorStore((s) => s.finalPreviewUrl);
   const uncroppedAdjustedPreviewUrl = useEditorStore((s) => s.uncroppedAdjustedPreviewUrl);
   const originalSize = useEditorStore((s) => s.originalSize);
-  const previewSize = useEditorStore((s) => s.previewSize);
   const wgpuPhase = useEditorStore((s) => s.wgpuPhase);
 
   const setEditor = useEditorStore((s) => s.setEditor);
@@ -23,6 +22,23 @@ export function useImageLoader(cachedEditStateRef: React.RefObject<any>) {
   const appSettings = useSettingsStore((s) => s.appSettings);
 
   const isWgpuActive = appSettings?.useWgpuRenderer !== false && selectedImage?.isReady && wgpuPhase === 'live';
+
+  const selectedPath = selectedImage?.path;
+  useEffect(() => {
+    useEditorStore.getState().setEditor({ imageDefaults: null });
+    if (!selectedPath) return;
+    let isCurrent = true;
+    fetchImageDefaults(selectedPath)
+      .then((imageDefaults) => {
+        if (isCurrent && useEditorStore.getState().selectedImage?.path === selectedPath) {
+          useEditorStore.getState().setEditor({ imageDefaults });
+        }
+      })
+      .catch((err) => console.error('Failed to load default adjustments:', err));
+    return () => {
+      isCurrent = false;
+    };
+  }, [selectedPath]);
 
   useEffect(() => {
     if (selectedImage && !selectedImage.isReady && selectedImage.path) {
@@ -36,12 +52,7 @@ export function useImageLoader(cachedEditStateRef: React.RefObject<any>) {
           const metadata: any = await invoke(Invokes.LoadMetadata, { path: selectedImage.path });
           if (!isEffectActive) return;
 
-          let initialAdjusts;
-          if (metadata.adjustments && !metadata.adjustments.is_null) {
-            initialAdjusts = normalizeLoadedAdjustments(metadata.adjustments);
-          } else {
-            initialAdjusts = { ...INITIAL_ADJUSTMENTS };
-          }
+          const initialAdjusts = adjustmentsFromMetadata(metadata.adjustments);
 
           setEditor({ adjustments: initialAdjusts });
 
@@ -65,23 +76,6 @@ export function useImageLoader(cachedEditStateRef: React.RefObject<any>) {
 
           const { width, height } = loadImageResult;
           setEditor({ originalSize: { width, height } });
-
-          if (appSettings?.editorPreviewResolution) {
-            const maxSize = appSettings.editorPreviewResolution;
-            const aspectRatio = width / height;
-
-            if (width > height) {
-              const pWidth = Math.min(width, maxSize);
-              const pHeight = Math.round(pWidth / aspectRatio);
-              setEditor({ previewSize: { width: pWidth, height: pHeight } });
-            } else {
-              const pHeight = Math.min(height, maxSize);
-              const pWidth = Math.round(pHeight * aspectRatio);
-              setEditor({ previewSize: { width: pWidth, height: pHeight } });
-            }
-          } else {
-            setEditor({ previewSize: { width: 0, height: 0 } });
-          }
 
           setEditor((state) => {
             if (state.selectedImage && state.selectedImage.path === selectedImage.path) {
@@ -138,7 +132,6 @@ export function useImageLoader(cachedEditStateRef: React.RefObject<any>) {
         uncroppedPreviewUrl: uncroppedAdjustedPreviewUrl,
         selectedImage,
         originalSize,
-        previewSize,
       };
     } else {
       cachedEditStateRef.current = null;
@@ -151,7 +144,6 @@ export function useImageLoader(cachedEditStateRef: React.RefObject<any>) {
     finalPreviewUrl,
     uncroppedAdjustedPreviewUrl,
     originalSize,
-    previewSize,
     isWgpuActive,
     cachedEditStateRef,
   ]);

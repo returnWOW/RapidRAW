@@ -6,7 +6,7 @@ import {
   OutputColorSpace,
   TiffBitDepth,
   WatermarkAnchor,
-} from '../components/ui/ExportImportProperties';
+} from '../types/export';
 
 export function useExportSettings() {
   const [fileFormat, setFileFormat] = useState('jpeg');
@@ -31,6 +31,9 @@ export function useExportSettings() {
   const [preserveTimestamps, setPreserveTimestamps] = useState(false);
   const [stripGps, setStripGps] = useState(true);
   const [exportMasks, setExportMasks] = useState(false);
+  const [exportOriginal, setExportOriginal] = useState(false);
+  const [originalCrop, setOriginalCrop] = useState(true);
+  const [originalKeepExposure, setOriginalKeepExposure] = useState(false);
   const [preserveFolders, setPreserveFolders] = useState(false);
   const [filenameTemplate, setFilenameTemplate] = useState('{original_filename}_edited');
   const [enableWatermark, setEnableWatermark] = useState(false);
@@ -65,6 +68,9 @@ export function useExportSettings() {
     setPreserveTimestamps(preset.preserveTimestamps ?? false);
     setStripGps(preset.stripGps);
     setExportMasks(preset.exportMasks ?? false);
+    setExportOriginal(preset.exportOriginal ?? false);
+    setOriginalCrop(preset.originalCrop ?? true);
+    setOriginalKeepExposure(preset.originalKeepExposure ?? false);
     setPreserveFolders(preset.preserveFolders ?? false);
     setFilenameTemplate(preset.filenameTemplate);
     setEnableWatermark(preset.enableWatermark);
@@ -101,6 +107,9 @@ export function useExportSettings() {
       preserveTimestamps,
       stripGps,
       exportMasks,
+      exportOriginal,
+      originalCrop,
+      originalKeepExposure,
       preserveFolders,
       filenameTemplate,
       enableWatermark,
@@ -135,6 +144,9 @@ export function useExportSettings() {
       preserveTimestamps,
       stripGps,
       exportMasks,
+      exportOriginal,
+      originalCrop,
+      originalKeepExposure,
       preserveFolders,
       filenameTemplate,
       enableWatermark,
@@ -193,6 +205,12 @@ export function useExportSettings() {
     setStripGps,
     exportMasks,
     setExportMasks,
+    exportOriginal,
+    setExportOriginal,
+    originalCrop,
+    setOriginalCrop,
+    originalKeepExposure,
+    setOriginalKeepExposure,
     preserveFolders,
     setPreserveFolders,
     filenameTemplate,

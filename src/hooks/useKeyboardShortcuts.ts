@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { toast } from 'react-toastify';
-import { ImageFile, ImageFlag, Panel, ExifOverlay, LibraryViewMode } from '../components/ui/AppProperties';
+import { ImageFile, ImageFlag } from '../types/library';
+import { Panel } from '../types/ui';
+import { ExifOverlay, LibraryViewMode } from '../types/settings';
 import { KEYBIND_DEFINITIONS, getEffectiveCombo, normalizeCombo } from '../utils/keyboardUtils';
 import { useEditorStore } from '../store/useEditorStore';
 import { useLibraryStore } from '../store/useLibraryStore';
@@ -48,6 +50,7 @@ export const useKeyboardShortcuts = ({
     handleCopyAdjustments,
     handlePasteAdjustments,
     handleEnableAdjustments,
+    setAdjustments,
     toggleCompare,
   } = useEditorActions();
   const { handleRate, handleSetFlag, handleToggleFlag, handleSetColorLabel, handleClearSelection } =
@@ -678,23 +681,17 @@ export const useKeyboardShortcuts = ({
         execute: (e: KeyboardEvent, s: any) => {
           e.preventDefault();
           if (s.editor.activeMaskContainerId) {
-            s.editor.setEditor((state: any) => ({
-              adjustments: {
-                ...state.adjustments,
-                masks: state.adjustments.masks.filter((c: any) => c.id !== s.editor.activeMaskContainerId),
-              },
-              activeMaskContainerId: null,
-              activeMaskId: null,
+            setAdjustments((prev: any) => ({
+              ...prev,
+              masks: prev.masks.filter((c: any) => c.id !== s.editor.activeMaskContainerId),
             }));
+            s.editor.setEditor({ activeMaskContainerId: null, activeMaskId: null });
           } else if (s.editor.activeAiPatchContainerId) {
-            s.editor.setEditor((state: any) => ({
-              adjustments: {
-                ...state.adjustments,
-                aiPatches: state.adjustments.aiPatches.filter((c: any) => c.id !== s.editor.activeAiPatchContainerId),
-              },
-              activeAiPatchContainerId: null,
-              activeAiSubMaskId: null,
+            setAdjustments((prev: any) => ({
+              ...prev,
+              aiPatches: prev.aiPatches.filter((c: any) => c.id !== s.editor.activeAiPatchContainerId),
             }));
+            s.editor.setEditor({ activeAiPatchContainerId: null, activeAiSubMaskId: null });
           }
         },
       },
@@ -822,6 +819,7 @@ export const useKeyboardShortcuts = ({
     handleSetFlag,
     handleToggleFlag,
     handleSetColorLabel,
+    setAdjustments,
     handleClearSelection,
     toggleCompare,
   ]);

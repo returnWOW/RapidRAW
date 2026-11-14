@@ -8,8 +8,9 @@ import { useEditorStore } from '../store/useEditorStore';
 import { useUIStore } from '../store/useUIStore';
 import { JobKind, useProcessStore } from '../store/useProcessStore';
 import { useSettingsStore } from '../store/useSettingsStore';
-import { ImageFlag, Invokes } from '../components/ui/AppProperties';
-import { Status } from '../components/ui/ExportImportProperties';
+import { ImageFlag } from '../types/library';
+import { Invokes } from '../types/invokes';
+import { Status } from '../types/export';
 import { debouncedSave, debouncedSetHistory } from './useEditorActions';
 import { deleteImageSnapshots, moveImageSnapshots } from '../utils/historyStorage';
 
@@ -141,8 +142,8 @@ export function useFileOperations(
       imageList.some((image) => image.path.startsWith(`${pathsToDelete[0]}?vc=`));
 
     let modalTitle = 'Confirm Delete';
-    let modalMessage = '';
-    let confirmText = 'Delete';
+    let modalMessage: string;
+    let confirmText: string;
 
     if (selectionHasVirtualCopies) {
       modalTitle = 'Delete Image and All Virtual Copies?';
@@ -247,6 +248,11 @@ export function useFileOperations(
           }
           if (currentFolderPath && isInRenamedFolder(currentFolderPath)) {
             setLibrary({ currentFolderPath: renamePath(currentFolderPath) });
+          } else if (
+            currentFolderPath &&
+            (oldPath.startsWith(`${currentFolderPath}/`) || oldPath.startsWith(`${currentFolderPath}\\`))
+          ) {
+            await refreshImageList();
           }
 
           const currentPins = appSettings?.pinnedFolders || [];
@@ -266,7 +272,7 @@ export function useFileOperations(
         }
       }
     },
-    [refreshAllFolderTrees],
+    [refreshAllFolderTrees, refreshImageList],
   );
 
   const handleSaveRename = useCallback(

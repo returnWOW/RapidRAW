@@ -1,11 +1,19 @@
 import { RefObject } from 'react';
 import { create } from 'zustand';
+import debounce from 'lodash.debounce';
 import { Adjustments, INITIAL_ADJUSTMENTS, MaskContainer, CropGeometry, pickCropGeometry } from '../utils/adjustments';
-import { SelectedImage, WaveformData, BrushSettings, CompareView } from '../components/ui/AppProperties';
-import { ChannelConfig } from '../components/adjustments/Curves';
+import {
+  SelectedImage,
+  WaveformData,
+  BrushSettings,
+  ChannelConfig,
+  OverlayMode,
+  type SpeedEditTarget,
+  type ImageDefaults,
+} from '../types/editor';
+import { CompareView } from '../types/settings';
 import { ImageDimensions } from '../hooks/useImageRenderSize';
-import { ToolType } from '../components/panel/right/Masks';
-import { OverlayMode } from '../components/panel/right/CropPanel';
+import { ToolType } from '../types/masks';
 import {
   areHistoryStatesEqual,
   describeHistoryChange,
@@ -15,7 +23,6 @@ import {
 } from '../utils/editHistory';
 import { deleteImageHistories, loadImageHistory, moveImageHistory } from '../utils/historyStorage';
 import { HslMixerProperty } from '../utils/hslMixer';
-import type { SpeedEditTarget } from '../components/ui/Slider';
 
 export type CenterMarker = 'vignette' | 'centre';
 
@@ -122,6 +129,7 @@ interface EditorState {
   isGeneratingAiMask: boolean;
   isGeneratingAi: boolean;
   aiDenoiseProgress: Record<string, number>;
+  aiUpscaleProgress: Record<string, number>;
   isAIConnectorConnected: boolean;
   wgpuPhase: WgpuPhase;
   patchesSentToBackend: Set<string>;
@@ -130,6 +138,8 @@ interface EditorState {
   copiedSectionAdjustments: any | null;
   copiedMask: MaskContainer | null;
   copiedAdjustments: Adjustments | null;
+  copiedAdjustmentsDefaults: Adjustments | null;
+  imageDefaults: ImageDefaults | null;
 
   // Actions
   setEditor: (updater: Partial<EditorState> | ((state: EditorState) => Partial<EditorState>)) => void;
@@ -145,6 +155,16 @@ interface EditorState {
   renameImageHistory: (oldPath: string, newPath: string) => void;
   endImageHistory: (fallback: Adjustments) => void;
 }
+
+export const debouncedSetHistory = debounce(
+  (newAdj: Adjustments, label: string | undefined, path: string | null) => {
+    const state = useEditorStore.getState();
+    if (path && state.historyPath !== path) return;
+    if (!areHistoryStatesEqual(state.adjustments, newAdj)) return;
+    state.pushHistory(newAdj, label, path);
+  },
+  500,
+);
 
 type CanvasToolState = Pick<
   EditorState,
@@ -216,11 +236,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   copiedMask: null,
   brushSettings: { size: 100, feather: 50, tool: ToolType.Brush },
   copiedAdjustments: null,
+  copiedAdjustmentsDefaults: null,
+  imageDefaults: null,
 
   isGeneratingAiMask: false,
   isAIConnectorConnected: false,
   isGeneratingAi: false,
   aiDenoiseProgress: {},
+  aiUpscaleProgress: {},
   isMaskControlHovered: false,
   wgpuPhase: 'hidden',
   patchesSentToBackend: new Set<string>(),
