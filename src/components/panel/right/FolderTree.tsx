@@ -26,12 +26,15 @@ import {
   FolderPlus,
   RefreshCw,
   Menu,
+  Sparkles,
+  Trash2,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
+import { toast } from 'react-toastify';
 import { useDroppable } from '@dnd-kit/core';
 import Text from '../../ui/Text';
 import { TextColors, TextVariants, TextWeights } from '../../../types/typography';
@@ -39,7 +42,15 @@ import { useShallow } from 'zustand/react/shallow';
 import { useLibraryStore } from '../../../store/useLibraryStore';
 import { useSettingsStore } from '../../../store/useSettingsStore';
 import { useUIStore } from '../../../store/useUIStore';
-import { AlbumItem, AlbumGroup, Album, Invokes, FolderTreeSort, SortDirection } from '../../ui/AppProperties';
+import {
+  AlbumItem,
+  AlbumGroup,
+  Album,
+  FilterCriteria,
+  Invokes,
+  FolderTreeSort,
+  SortDirection,
+} from '../../ui/AppProperties';
 import { useLibraryActions } from '../../../hooks/useLibraryActions';
 import ImmichSection from '../../immich/ImmichSection';
 
@@ -53,6 +64,49 @@ export interface FolderTree {
   modified?: number;
   created?: number;
 }
+
+interface SmartAlbumSearch {
+  tags: string[];
+  text: string;
+  mode: 'AND' | 'OR';
+}
+
+interface SmartAlbum {
+  id: string;
+  name: string;
+  filter: FilterCriteria;
+  search: SmartAlbumSearch;
+}
+
+const SMART_ALBUMS_KEY = 'rapidraw.smartAlbums';
+
+const readSmartAlbums = (): SmartAlbum[] => {
+  try {
+    const raw = localStorage.getItem(SMART_ALBUMS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const writeSmartAlbums = (albums: SmartAlbum[]) => {
+  try {
+    localStorage.setItem(SMART_ALBUMS_KEY, JSON.stringify(albums));
+  } catch {
+    // Smart albums are a convenience; keep the in-memory list on failure.
+  }
+};
+
+const hasActiveSmartCriteria = (filter: FilterCriteria, search: SmartAlbumSearch): boolean =>
+  filter.colors.length > 0 ||
+  filter.rating > 0 ||
+  (filter.rawStatus && filter.rawStatus !== 'all') ||
+  (filter.editedStatus && filter.editedStatus !== 'all') ||
+  (filter.flagStatus && filter.flagStatus !== 'all') ||
+  search.tags.length > 0 ||
+  search.text.trim().length > 0;
 
 interface FolderTreeProps {
   isResizing: boolean;
@@ -322,7 +376,17 @@ function FolderOptionsMenu({
   );
 }
 
-function SectionHeader({ title, isOpen, onToggle }: { title: string; isOpen: boolean; onToggle: () => void }) {
+function SectionHeader({
+  title,
+  isOpen,
+  onToggle,
+  action,
+}: {
+  title: string;
+  isOpen: boolean;
+  onToggle: () => void;
+  action?: ReactNode;
+}) {
   return (
     <div
       className="flex items-center justify-between w-full px-1 py-1.5 cursor-pointer group rounded-md hover:bg-surface/30 transition-colors"
@@ -334,6 +398,11 @@ function SectionHeader({ title, isOpen, onToggle }: { title: string; isOpen: boo
         </div>
         <span className="ml-1 uppercase tracking-wider select-none truncate">{title}</span>
       </Text>
+      {action && (
+        <div className="flex items-center gap-1" onClick={(event) => event.stopPropagation()}>
+          {action}
+        </div>
+      )}
     </div>
   );
 }
@@ -736,6 +805,11 @@ export default function FolderTree({
 
   const [searchQuery, setSearchQuery] = useState('');
   const [isHovering, setIsHovering] = useState(false);
+  const [smartAlbums, setSmartAlbums] = useState<SmartAlbum[]>(() => readSmartAlbums());
+  const [isSmartAlbumsOpen, setIsSmartAlbumsOpen] = useState(true);
+  const [isNamingSmartAlbum, setIsNamingSmartAlbum] = useState(false);
+  const [smartAlbumName, setSmartAlbumName] = useState('');
+  const [activeSmartAlbumId, setActiveSmartAlbumId] = useState<string | null>(null);
   const pinnedFolders = appSettings?.pinnedFolders || [];
   const openSections = appSettings?.openTreeSections ?? ['current'];
   const showImageCounts = appSettings?.enableFolderImageCounts ?? false;
@@ -757,6 +831,57 @@ export default function FolderTree({
     }
   };
 
+  const beginSmartAlbum = () => {
+    const { filterCriteria, searchCriteria } = useLibraryStore.getState();
+    if (!hasActiveSmartCriteria(filterCriteria, searchCriteria)) {
+      toast.info(t('library.folders.smartAlbum.filterFirst'));
+      return;
+    }
+    setSmartAlbumName(t('library.folders.smartAlbum.defaultName', { number: smartAlbums.length + 1 }));
+    setIsNamingSmartAlbum(true);
+  };
+
+  const cancelSmartAlbum = () => {
+    setIsNamingSmartAlbum(false);
+    setSmartAlbumName('');
+  };
+
+  const saveSmartAlbum = () => {
+    const { filterCriteria, searchCriteria } = useLibraryStore.getState();
+    if (!hasActiveSmartCriteria(filterCriteria, searchCriteria)) {
+      toast.info(t('library.folders.smartAlbum.filterFirst'));
+      return;
+    }
+    const name =
+      smartAlbumName.trim() || t('library.folders.smartAlbum.defaultName', { number: smartAlbums.length + 1 });
+    const album: SmartAlbum = {
+      id: crypto.randomUUID(),
+      name,
+      filter: JSON.parse(JSON.stringify(filterCriteria)),
+      search: JSON.parse(JSON.stringify(searchCriteria)),
+    };
+    const next = [...smartAlbums, album];
+    setSmartAlbums(next);
+    writeSmartAlbums(next);
+    setIsNamingSmartAlbum(false);
+    setSmartAlbumName('');
+    setActiveSmartAlbumId(album.id);
+  };
+
+  const applySmartAlbum = (album: SmartAlbum) => {
+    const { setFilterCriteria, setSearchCriteria } = useLibraryStore.getState();
+    setFilterCriteria(album.filter);
+    setSearchCriteria(album.search);
+    setActiveSmartAlbumId(album.id);
+  };
+
+  const deleteSmartAlbum = (id: string) => {
+    const next = smartAlbums.filter((album) => album.id !== id);
+    setSmartAlbums(next);
+    writeSmartAlbums(next);
+    if (activeSmartAlbumId === id) setActiveSmartAlbumId(null);
+  };
+
   const handleEmptyAreaContextMenu = (e: any) => {
     if (e.target === e.currentTarget) {
       onContextMenu(e, null, false);
@@ -774,6 +899,11 @@ export default function FolderTree({
 
   const trimmedQuery = searchQuery.trim();
   const isSearching = trimmedQuery.length > 1;
+  const visibleSmartAlbums = useMemo(() => {
+    if (!isSearching) return smartAlbums;
+    return smartAlbums.filter((album) => album.name.toLowerCase().includes(trimmedQuery.toLowerCase()));
+  }, [smartAlbums, isSearching, trimmedQuery]);
+  const showSmartAlbumSection = !isSearching || visibleSmartAlbums.length > 0;
 
   const filteredTrees = useMemo(() => {
     let base = folderTrees;
@@ -987,6 +1117,117 @@ export default function FolderTree({
                             </motion.div>
                           ))}
                         </AnimatePresence>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </>
+            )}
+
+            {showSmartAlbumSection && (
+              <>
+                <div>
+                  <SectionHeader
+                    title={t('library.folders.sections.smartAlbums')}
+                    isOpen={isSmartAlbumsOpen}
+                    onToggle={() => setIsSmartAlbumsOpen((value) => !value)}
+                    action={
+                      <button
+                        className="p-1 rounded-md text-text-secondary hover:bg-surface hover:text-text-primary transition-colors"
+                        onClick={beginSmartAlbum}
+                        data-tooltip={t('library.folders.smartAlbum.save')}
+                        aria-label={t('library.folders.smartAlbum.save')}
+                      >
+                        <Plus size={14} />
+                      </button>
+                    }
+                  />
+                </div>
+                <AnimatePresence initial={false}>
+                  {isSmartAlbumsOpen && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.2, ease: 'easeInOut' }}
+                      className="overflow-hidden"
+                    >
+                      <div className="pt-1 pb-2">
+                        {isNamingSmartAlbum && (
+                          <form
+                            onSubmit={(event) => {
+                              event.preventDefault();
+                              saveSmartAlbum();
+                            }}
+                            className="flex items-center gap-1 px-1 pb-1"
+                          >
+                            <input
+                              autoFocus
+                              value={smartAlbumName}
+                              onChange={(event) => setSmartAlbumName(event.target.value)}
+                              onKeyDown={(event) => {
+                                if (event.key !== 'Escape') return;
+                                event.stopPropagation();
+                                cancelSmartAlbum();
+                              }}
+                              placeholder={t('library.folders.smartAlbum.namePlaceholder')}
+                              className="flex-1 min-w-0 h-8 bg-surface border border-transparent rounded-md px-2 text-sm focus:outline-hidden focus:border-accent"
+                            />
+                            <button
+                              type="submit"
+                              className="p-1 rounded-md text-text-secondary hover:bg-surface hover:text-text-primary transition-colors"
+                              data-tooltip={t('library.folders.smartAlbum.save')}
+                            >
+                              <Check size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={cancelSmartAlbum}
+                              className="p-1 rounded-md text-text-secondary hover:bg-surface hover:text-text-primary transition-colors"
+                              data-tooltip={t('library.folders.smartAlbum.cancel')}
+                            >
+                              <X size={14} />
+                            </button>
+                          </form>
+                        )}
+
+                        {visibleSmartAlbums.length === 0 ? (
+                          !isNamingSmartAlbum && (
+                            <div className="px-2 text-[11px] leading-4 text-text-secondary/70">
+                              {t('library.folders.smartAlbum.empty')}
+                            </div>
+                          )
+                        ) : (
+                          <div className="flex flex-col gap-0.5">
+                            {visibleSmartAlbums.map((album) => (
+                              <div
+                                key={album.id}
+                                onClick={() => applySmartAlbum(album)}
+                                className={clsx(
+                                  'group flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer transition-colors',
+                                  activeSmartAlbumId === album.id
+                                    ? 'bg-surface text-text-primary'
+                                    : 'text-text-primary hover:bg-surface/60',
+                                )}
+                                data-tooltip={album.name}
+                              >
+                                <Sparkles size={14} className="text-text-secondary shrink-0" />
+                                <span className="flex-1 min-w-0 truncate text-sm">{album.name}</span>
+                                <button
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    deleteSmartAlbum(album.id);
+                                  }}
+                                  className="p-1 rounded-md text-text-secondary opacity-60 md:opacity-0 md:group-hover:opacity-100 hover:text-red-400 transition-all"
+                                  data-tooltip={t('library.folders.smartAlbum.delete')}
+                                  aria-label={t('library.folders.smartAlbum.delete')}
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </motion.div>
                   )}

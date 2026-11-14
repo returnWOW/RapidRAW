@@ -907,6 +907,10 @@
         "masks": "蒙版"
       },
       "title": "预设",
+      "search": "搜索预设",
+      "clearSearch": "清除搜索",
+      "searchCount": "{{count}} 个预设",
+      "searchNoResults": "没有匹配的预设",
       "tooltips": {
         "explore": "探索社区预设",
         "export": "将所有预设导出为 .rrpreset 文件",
@@ -1003,6 +1007,12 @@
       "quality": "质量",
       "qualityLossless": "质量（无损）",
       "resolution": "分辨率",
+      "outputColorSpace": "输出色彩空间",
+      "colorSpaces": {
+        "srgb": "sRGB",
+        "displayP3": "Display P3",
+        "adobeRgb": "Adobe RGB (1998)"
+      },
       "tiffBitDepth": "TIFF 位深",
       "tiffBitDepth16": "16 位",
       "tiffBitDepth8": "8 位"
@@ -1271,7 +1281,17 @@
       "sections": {
         "albums": "相册",
         "folders": "文件夹",
-        "pinned": "已固定"
+        "pinned": "已固定",
+        "smartAlbums": "智能相册"
+      },
+      "smartAlbum": {
+        "cancel": "取消",
+        "defaultName": "智能相册 {{number}}",
+        "delete": "删除智能相册",
+        "empty": "暂无智能相册。先设置筛选条件，再点 +。",
+        "filterFirst": "请先应用筛选或搜索",
+        "namePlaceholder": "智能相册名称",
+        "save": "保存智能相册"
       },
       "sort": {
         "created": "创建日期",
@@ -2416,10 +2436,13 @@
       "filterLabel": "LUT 文件",
       "import": "导入配置文件",
       "importFailed": "导入 LUT 失败",
+      "importToFolder": "导入到此文件夹",
       "intensity": "强度",
       "label": "LUT",
       "noResults": "没有匹配的 LUT",
+      "openFolder": "打开 LUT 文件夹",
       "recent": "最近使用",
+      "refresh": "刷新 LUT",
       "removeFavorite": "取消收藏",
       "removeLut": "移除 LUT",
       "resultCount": "{{count}} 个结果",
@@ -2427,6 +2450,7 @@
       "search": "搜索 LUT",
       "select": "选择",
       "selectLutFile": "选择 LUT 文件",
+      "uncategorized": "未分类",
       "unsupportedFormat": "检测到不支持的文件格式：.{{ext}}"
     },
     "slider": {

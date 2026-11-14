@@ -1,7 +1,7 @@
 import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ImageOff, Search, Star, Upload, X, Trash2 } from 'lucide-react';
+import { ChevronDown, FolderOpen, ImageOff, RefreshCw, Search, Star, Upload, X, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -15,6 +15,7 @@ interface LutEntry {
   name: string;
   path: string;
   isBuiltIn: boolean;
+  folder?: string | null;
 }
 
 interface LutPreview {
@@ -78,10 +79,11 @@ export default function LUTControl({
   const [entries, setEntries] = useState<LutEntry[]>([]);
   const [search, setSearch] = useState('');
   const [previews, setPreviews] = useState<Record<string, string | null>>({});
-  const [isLoadingPreviews, setIsLoadingPreviews] = useState(false);
+  const [visiblePaths, setVisiblePaths] = useState<Set<string>>(new Set());
   const [favorites, setFavorites] = useState<Set<string>>(() => new Set(readStringList(FAVORITES_KEY)));
   const [recent, setRecent] = useState<string[]>(() => readStringList(RECENT_KEY).slice(0, MAX_RECENT));
   const previewCache = useRef<Map<string, Map<string, string | null>>>(new Map());
+  const expandedRef = useRef<HTMLDivElement>(null);
 
   const toggleFavorite = (path: string) => {
     setFavorites((previous) => {
@@ -161,18 +163,58 @@ export default function LUTControl({
 
   useEffect(() => {
     setPreviews({});
+    setVisiblePaths(new Set());
   }, [selectedImagePath]);
 
   useEffect(() => {
-    if (!isExpanded || !selectedImagePath || !isImageReady || filteredEntries.length === 0) {
-      setIsLoadingPreviews(false);
+    setVisiblePaths(new Set());
+  }, [filteredEntries]);
+
+  useEffect(() => {
+    if (!isExpanded) return;
+    const container = expandedRef.current;
+    if (!container) return;
+
+    const observer = new IntersectionObserver(
+      (observed) => {
+        const paths = observed
+          .filter((entry) => entry.isIntersecting)
+          .map((entry) => (entry.target as HTMLElement).dataset.lutPath)
+          .filter((path): path is string => Boolean(path));
+        if (paths.length === 0) return;
+        setVisiblePaths((previous) => {
+          let changed = false;
+          const next = new Set(previous);
+          paths.forEach((path) => {
+            if (!next.has(path)) {
+              next.add(path);
+              changed = true;
+            }
+          });
+          return changed ? next : previous;
+        });
+      },
+      { rootMargin: '120px' },
+    );
+
+    container.querySelectorAll<HTMLElement>('[data-lut-path]').forEach((node) => observer.observe(node));
+    return () => observer.disconnect();
+  }, [isExpanded, filteredEntries, favorites, recent]);
+
+  const visibleEntries = useMemo(
+    () => filteredEntries.filter((entry) => visiblePaths.has(entry.path)),
+    [filteredEntries, visiblePaths],
+  );
+
+  useEffect(() => {
+    if (!isExpanded || !selectedImagePath || !isImageReady || visibleEntries.length === 0) {
       return;
     }
 
     const imageCache = previewCache.current.get(selectedImagePath);
     const cached: Record<string, string | null> = {};
     const missing: LutEntry[] = [];
-    filteredEntries.forEach((entry) => {
+    visibleEntries.forEach((entry) => {
       if (imageCache?.has(entry.path)) {
         cached[entry.path] = imageCache.get(entry.path) ?? null;
       } else {
@@ -182,13 +224,9 @@ export default function LUTControl({
     if (Object.keys(cached).length > 0) {
       setPreviews((previous) => ({ ...previous, ...cached }));
     }
-    if (missing.length === 0) {
-      setIsLoadingPreviews(false);
-      return;
-    }
+    if (missing.length === 0) return;
 
     let isActive = true;
-    setIsLoadingPreviews(true);
     const timer = window.setTimeout(() => {
       invoke<LutPreview[]>('generate_lut_previews', {
         luts: missing.map((entry) => ({ path: entry.path, isBuiltIn: entry.isBuiltIn })),
@@ -211,19 +249,16 @@ export default function LUTControl({
             return next;
           });
         })
-        .catch((err) => console.error('Failed to generate LUT previews:', err))
-        .finally(() => {
-          if (isActive) setIsLoadingPreviews(false);
-        });
+        .catch((err) => console.error('Failed to generate LUT previews:', err));
     }, 120);
 
     return () => {
       isActive = false;
       window.clearTimeout(timer);
     };
-  }, [isExpanded, selectedImagePath, isImageReady, filteredEntries]);
+  }, [isExpanded, selectedImagePath, isImageReady, visibleEntries]);
 
-  const handleImport = async () => {
+  const handleImport = async (targetFolder?: string | null) => {
     try {
       const { osPlatform } = useSettingsStore.getState();
       const isAndroid = osPlatform === 'android';
@@ -270,14 +305,34 @@ export default function LUTControl({
         }
       }
 
-      const list = await invoke<LutEntry[]>('import_luts', { sourcePaths: validPaths });
+      const list = await invoke<LutEntry[]>('import_luts', {
+        sourcePaths: validPaths,
+        folder: targetFolder ?? null,
+      });
       previewCache.current.clear();
       setEntries(list);
       setPreviews({});
+      setVisiblePaths(new Set());
     } catch (err) {
       console.error('Failed to import LUTs:', err);
       toast.error(t('ui.lut.importFailed'));
     }
+  };
+
+  const handleOpenLutFolder = async () => {
+    try {
+      await invoke('open_luts_folder');
+    } catch (err) {
+      console.error('Failed to open LUT folder:', err);
+      toast.error(String(err));
+    }
+  };
+
+  const handleRefresh = async () => {
+    previewCache.current.clear();
+    setPreviews({});
+    setVisiblePaths(new Set());
+    await refreshList();
   };
 
   const handleSwatchClick = (entry: LutEntry) => {
@@ -301,6 +356,17 @@ export default function LUTControl({
 
   const builtInLuts = filteredEntries.filter((entry) => entry.isBuiltIn && !pinnedPaths.has(entry.path));
   const customLuts = filteredEntries.filter((entry) => !entry.isBuiltIn && !pinnedPaths.has(entry.path));
+  const customFolders = (() => {
+    const groups = new Map<string, LutEntry[]>();
+    customLuts.forEach((entry) => {
+      const key = entry.folder?.trim() || '';
+      const group = groups.get(key) ?? [];
+      group.push(entry);
+      groups.set(key, group);
+    });
+    return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
+  })();
+
   const hasCustomLuts = entries.some((entry) => !entry.isBuiltIn);
 
   const renderSwatch = (entry: LutEntry) => {
@@ -308,7 +374,7 @@ export default function LUTControl({
     const isSelected = entry.path === lutPath;
     const isFavorite = favorites.has(entry.path);
     return (
-      <div key={entry.path} className="relative group">
+      <div key={entry.path} data-lut-path={entry.path} className="relative group">
         <button
           onMouseEnter={() => onLutHover?.(entry.path, entry.isBuiltIn)}
           onMouseLeave={() => onLutHover?.(null)}
@@ -320,8 +386,8 @@ export default function LUTControl({
           data-tooltip={entry.name}
         >
           <div className="relative aspect-square w-full">
-            {isLoadingPreviews && thumb === undefined ? (
-              <div className="w-full h-full animate-pulse bg-surface" />
+            {thumb === undefined ? (
+              <div className="w-full h-full bg-surface" />
             ) : thumb ? (
               <img src={thumb} alt={entry.name} className="w-full h-full object-cover" draggable={false} />
             ) : (
@@ -340,7 +406,7 @@ export default function LUTControl({
           }}
           className={clsx(
             'absolute top-1 right-1 z-10 p-1 rounded-full bg-black/45 hover:bg-black/70 transition-opacity',
-            isFavorite ? 'opacity-100' : 'opacity-70 md:opacity-0 md:group-hover:opacity-100',
+            isFavorite ? 'opacity-100' : 'opacity-70 md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100',
           )}
           data-tooltip={isFavorite ? t('ui.lut.removeFavorite') : t('ui.lut.addFavorite')}
           aria-label={isFavorite ? t('ui.lut.removeFavorite') : t('ui.lut.addFavorite')}
@@ -350,6 +416,29 @@ export default function LUTControl({
       </div>
     );
   };
+
+  const renderCustomGroup = (folder: string, groupEntries: LutEntry[], allowImport: boolean) => (
+    <div key={folder || '__root'}>
+      {(folder || customFolders.length > 1) && (
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-text-secondary/80">
+            {folder || t('ui.lut.uncategorized')}
+          </span>
+          {allowImport && (
+            <button
+              onClick={() => handleImport(folder)}
+              className="text-[10px] text-text-secondary hover:text-accent flex items-center gap-1 transition-colors"
+              data-tooltip={t('ui.lut.importToFolder')}
+            >
+              <Upload size={10} />
+              {t('ui.lut.import')}
+            </button>
+          )}
+        </div>
+      )}
+      <div className="grid grid-cols-3 gap-2">{groupEntries.map(renderSwatch)}</div>
+    </div>
+  );
 
   return (
     <div className="mb-2">
@@ -412,6 +501,7 @@ export default function LUTControl({
             className="overflow-hidden"
           >
             <div
+              ref={expandedRef}
               className={`${lutName ? '' : 'mt-3'} pb-1 space-y-4`}
               onKeyDown={(event) => {
                 if (event.key !== 'Escape') return;
@@ -491,37 +581,59 @@ export default function LUTControl({
                         <span className="text-sm font-medium text-text-secondary select-none">
                           {t('ui.lut.customLuts')}
                         </span>
-                        {hasCustomLuts && (
+                        <div className="flex items-center gap-2">
                           <button
-                            onClick={handleImport}
-                            className="text-xs text-text-secondary hover:text-accent flex items-center gap-1 transition-colors"
-                            data-tooltip={t('ui.lut.import')}
+                            onClick={handleOpenLutFolder}
+                            className="text-text-secondary hover:text-accent transition-colors"
+                            data-tooltip={t('ui.lut.openFolder')}
+                            aria-label={t('ui.lut.openFolder')}
                           >
-                            <Upload size={12} />
-                            {t('ui.lut.import')}
+                            <FolderOpen size={12} />
                           </button>
-                        )}
+                          <button
+                            onClick={handleRefresh}
+                            className="text-text-secondary hover:text-accent transition-colors"
+                            data-tooltip={t('ui.lut.refresh')}
+                            aria-label={t('ui.lut.refresh')}
+                          >
+                            <RefreshCw size={12} />
+                          </button>
+                          {hasCustomLuts && (
+                            <button
+                              onClick={() => handleImport()}
+                              className="text-xs text-text-secondary hover:text-accent flex items-center gap-1 transition-colors"
+                              data-tooltip={t('ui.lut.import')}
+                            >
+                              <Upload size={12} />
+                              {t('ui.lut.import')}
+                            </button>
+                          )}
+                        </div>
                       </div>
 
-                      {customLuts.length === 0 && !hasCustomLuts ? (
+                      {!hasCustomLuts ? (
                         <button
-                          onClick={handleImport}
+                          onClick={() => handleImport()}
                           className="w-full flex items-center justify-center gap-1.5 py-4 rounded-md bg-bg-tertiary hover:bg-surface border-2 border-dashed border-text-secondary/20 hover:border-text-secondary/40 text-sm text-text-primary transition-colors cursor-pointer"
                         >
                           <Upload size={16} />
                           {t('ui.lut.import')}
                         </button>
                       ) : (
-                        <div className="grid grid-cols-3 gap-2">
-                          {customLuts.map(renderSwatch)}
+                        <div className="space-y-3">
+                          {customFolders.map(([folder, folderEntries]) =>
+                            renderCustomGroup(folder, folderEntries, true),
+                          )}
 
-                          <button
-                            onClick={handleImport}
-                            className="flex flex-col items-center justify-center gap-1.5 rounded-md bg-bg-tertiary border-2 border-dashed border-text-secondary/25 hover:border-accent text-text-secondary hover:text-text-primary transition-all duration-150 cursor-pointer aspect-square"
-                            data-tooltip={t('ui.lut.import')}
-                          >
-                            <Upload size={18} />
-                          </button>
+                          <div className="grid grid-cols-3 gap-2">
+                            <button
+                              onClick={() => handleImport()}
+                              className="flex flex-col items-center justify-center gap-1.5 rounded-md bg-bg-tertiary border-2 border-dashed border-text-secondary/25 hover:border-accent text-text-secondary hover:text-text-primary transition-all duration-150 cursor-pointer aspect-square"
+                              data-tooltip={t('ui.lut.import')}
+                            >
+                              <Upload size={18} />
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -532,7 +644,11 @@ export default function LUTControl({
                       <span className="text-sm font-medium text-text-secondary select-none block mb-2">
                         {t('ui.lut.customLuts')}
                       </span>
-                      <div className="grid grid-cols-3 gap-2">{customLuts.map(renderSwatch)}</div>
+                      <div className="space-y-3">
+                        {customFolders.map(([folder, folderEntries]) =>
+                          renderCustomGroup(folder, folderEntries, false),
+                        )}
+                      </div>
                     </div>
                   )}
                 </>

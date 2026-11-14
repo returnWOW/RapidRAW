@@ -23,9 +23,11 @@ import {
   FolderPlus,
   Loader2,
   Plus,
+  Search,
   SortAsc,
   Trash2,
   Users,
+  X,
   Layers,
   Crop,
   Save,
@@ -585,6 +587,7 @@ export default function PresetsPanel({ onNavigateToCommunity }: PresetsPanelProp
   const [activePresetId, setActivePresetId] = useState<string | null>(null);
   const [presetIntensity, setPresetIntensity] = useState<number>(100);
   const [baseAdjustments, setBaseAdjustments] = useState<Adjustments | null>(null);
+  const [search, setSearch] = useState('');
 
   const previewsRef = useRef(previews);
   previewsRef.current = previews;
@@ -1268,6 +1271,26 @@ export default function PresetsPanel({ onNavigateToCommunity }: PresetsPanelProp
   const folders = useMemo(() => presets.filter((item: UserPreset) => item.folder), [presets]);
   const rootPresets = useMemo(() => presets.filter((item: UserPreset) => item.preset), [presets]);
 
+  const searchQuery = search.trim().toLowerCase();
+  const visibleFolders = useMemo(() => {
+    if (!searchQuery) return folders;
+    return folders.flatMap((item) => {
+      const folder = item.folder;
+      if (!folder) return [];
+      const folderMatches = (folder.name ?? '').toLowerCase().includes(searchQuery);
+      const children = folder.children.filter(
+        (child: Preset) => folderMatches || (child.name ?? '').toLowerCase().includes(searchQuery),
+      );
+      return children.length > 0 ? [{ ...item, folder: { ...folder, children } }] : [];
+    });
+  }, [folders, searchQuery]);
+  const visibleRootPresets = useMemo(() => {
+    if (!searchQuery) return rootPresets;
+    return rootPresets.filter((item) => item.preset?.name.toLowerCase().includes(searchQuery));
+  }, [rootPresets, searchQuery]);
+  const searchResultCount =
+    visibleFolders.reduce((sum, item) => sum + (item.folder?.children.length ?? 0), 0) + visibleRootPresets.length;
+
   return (
     <DndContext id="presets-panel-dnd" sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="flex flex-col h-full">
@@ -1308,6 +1331,38 @@ export default function PresetsPanel({ onNavigateToCommunity }: PresetsPanelProp
           </div>
         </div>
 
+        {selectedImage && presets.length > 0 && (
+          <div className="px-3 pb-2 shrink-0">
+            <div className="relative">
+              <Search
+                size={14}
+                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-secondary pointer-events-none"
+              />
+              <input
+                type="text"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder={t('editor.presets.search')}
+                className="w-full bg-bg-tertiary text-text-primary text-xs rounded-md pl-8 pr-7 py-1.5 placeholder:text-text-secondary/70 focus:outline-none focus:ring-1 focus:ring-accent"
+              />
+              {search && (
+                <button
+                  onClick={() => setSearch('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-text-secondary hover:text-text-primary transition-colors"
+                  data-tooltip={t('editor.presets.clearSearch')}
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+            {searchQuery && (
+              <div className="px-1 pt-1 text-[10px] text-text-secondary/80">
+                {t('editor.presets.searchCount', { count: searchResultCount })}
+              </div>
+            )}
+          </div>
+        )}
+
         <RootDroppableArea onContextMenu={handleBackgroundContextMenu}>
           {!selectedImage ? (
             <div className="flex items-center justify-center h-full">
@@ -1338,10 +1393,12 @@ export default function PresetsPanel({ onNavigateToCommunity }: PresetsPanelProp
                 {t('editor.presets.status.getCommunity')}
               </Button>
             </div>
+          ) : searchQuery && visibleFolders.length === 0 && visibleRootPresets.length === 0 ? (
+            <div className="text-center text-text-secondary pt-6 text-sm">{t('editor.presets.searchNoResults')}</div>
           ) : (
             <>
               <AnimatePresence>
-                {folders
+                {visibleFolders
                   .filter((item: UserPreset) => item.folder?.id !== deletingItemId)
                   .map((item: UserPreset, index: number) => (
                     <motion.div
@@ -1355,7 +1412,7 @@ export default function PresetsPanel({ onNavigateToCommunity }: PresetsPanelProp
                     >
                       <DroppableFolderItem
                         folder={item.folder}
-                        isExpanded={item.folder?.id ? expandedFolders.has(item.folder?.id) : false}
+                        isExpanded={searchQuery ? true : item.folder?.id ? expandedFolders.has(item.folder.id) : false}
                         onContextMenu={(e: any) => handleContextMenu(e, item)}
                         onToggle={toggleFolder}
                       >
@@ -1387,12 +1444,12 @@ export default function PresetsPanel({ onNavigateToCommunity }: PresetsPanelProp
                   ))}
               </AnimatePresence>
               <AnimatePresence>
-                {rootPresets
+                {visibleRootPresets
                   .filter((item: UserPreset) => item.preset?.id !== deletingItemId)
                   .map((item: UserPreset, index: number) => (
                     <motion.div
                       animate="visible"
-                      custom={folders.length + index}
+                      custom={visibleFolders.length + index}
                       exit="exit"
                       initial="hidden"
                       key={item.preset?.id}

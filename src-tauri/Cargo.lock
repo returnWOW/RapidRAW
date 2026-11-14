@@ -52,6 +52,7 @@ dependencies = [
  "objc2-core-image",
  "objc2-foundation",
  "once_cell",
+ "open",
  "ort",
  "png 0.18.1",
  "pollster",

@@ -910,6 +910,10 @@
         "masks": "Masks"
       },
       "title": "Presets",
+      "search": "Search presets",
+      "clearSearch": "Clear search",
+      "searchCount": "{{count}} presets",
+      "searchNoResults": "No presets match your search",
       "tooltips": {
         "explore": "Explore Community Presets",
         "export": "Export all presets to .rrpreset file",
@@ -1006,6 +1010,12 @@
       "quality": "Quality",
       "qualityLossless": "Quality (Lossless)",
       "resolution": "Resolution",
+      "outputColorSpace": "Output color space",
+      "colorSpaces": {
+        "srgb": "sRGB",
+        "displayP3": "Display P3",
+        "adobeRgb": "Adobe RGB (1998)"
+      },
       "tiffBitDepth": "TIFF bit depth",
       "tiffBitDepth16": "16-bit",
       "tiffBitDepth8": "8-bit"
@@ -1276,7 +1286,17 @@
       "sections": {
         "albums": "Albums",
         "folders": "Folders",
-        "pinned": "Pinned"
+        "pinned": "Pinned",
+        "smartAlbums": "Smart Albums"
+      },
+      "smartAlbum": {
+        "cancel": "Cancel",
+        "defaultName": "Smart Album {{number}}",
+        "delete": "Delete smart album",
+        "empty": "No smart albums yet. Set a filter, then use +.",
+        "filterFirst": "Apply a filter or search first",
+        "namePlaceholder": "Smart album name",
+        "save": "Save smart album"
       },
       "sort": {
         "created": "Date Created",
@@ -2423,10 +2443,13 @@
       "filterLabel": "LUT Files",
       "import": "Import profiles",
       "importFailed": "Failed to import LUTs",
+      "importToFolder": "Import into this folder",
       "intensity": "Intensity",
       "label": "LUT",
       "noResults": "No LUTs match your search",
+      "openFolder": "Open LUT folder",
       "recent": "Recent",
+      "refresh": "Refresh LUTs",
       "removeFavorite": "Remove from favorites",
       "removeLut": "Remove LUT",
       "resultCount": "{{count}} matches",
@@ -2435,6 +2458,7 @@
       "search": "Search LUTs",
       "select": "Select",
       "selectLutFile": "Select a LUT file",
+      "uncategorized": "Uncategorized",
       "unsupportedFormat": "Unsupported file format(s) detected: .{{ext}}"
     },
     "slider": {
