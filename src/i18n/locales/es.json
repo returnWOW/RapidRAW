@@ -954,6 +954,9 @@
         "masks": "Máscaras"
       },
       "title": "Ajustes preestablecidos",
+      "toasts": {
+        "importFailed": "No se pudo importar {{fileName}}: {{error}}"
+      },
       "tooltips": {
         "explore": "Explorar ajustes de la comunidad",
         "export": "Exportar todos los ajustes a un archivo .rrpreset",
@@ -976,6 +979,7 @@
         "adjust": "Ajustar",
         "crop": "Recortar",
         "export": "Exportar",
+        "filmstrip": "Tira de imágenes",
         "info": "Info",
         "inpaint": "Inpainting",
         "masks": "Máscaras",
@@ -983,15 +987,19 @@
         "tethering": "Captura conectada"
       }
     },
+    "toasts": {
+      "embeddedPreview": "RapidRAW no pudo decodificar este archivo RAW, así que estás viendo y editando la vista previa JPEG incrustada de la cámara. Espera menor calidad y menos margen de edición que con un RAW real."
+    },
     "toolbar": {
       "history": "Historial",
-      "switchToVariant": "Switch to {{label}}",
+      "switchToVariant": "Cambiar a {{label}}",
       "tooltips": {
         "aperture": "Apertura",
         "backToLibrary": "Volver a la Biblioteca",
         "compare": "Antes / después (B) o modos (clic derecho)",
         "focalLength": "Distancia focal",
         "fullscreen": "Alternar pantalla completa (F)",
+        "hdr": "Vista previa HDR",
         "iso": "ISO",
         "redo": "Rehacer (Ctrl+Y) o Historial (Clic derecho)",
         "shutterSpeed": "Velocidad de obturación",
@@ -1049,7 +1057,13 @@
       "selectFolderTitle_other": "Seleccionar carpeta para exportar {{count}} imágenes"
     },
     "file": {
+      "colorSpace": "Espacio de color",
       "dpi": "PPP",
+      "hdr": "Salida HDR",
+      "hdrJpegHint": "Añade un mapa de ganancia: las pantallas HDR muestran iluminaciones más brillantes y el resto muestra la foto normal.",
+      "hdrJxlHint": "Guarda un archivo HDR real (PQ, Rec. 2020). Requiere un visor compatible con HDR.",
+      "hdrNoPreview": "Esta pantalla no puede mostrar las altas luces HDR. La exportación las incluirá igualmente.",
+      "hdrPreviewOff": "Activa HDR en la barra de herramientas del editor para previsualizar las altas luces.",
       "quality": "Calidad",
       "qualityLossless": "Calidad (Sin pérdida)",
       "resolution": "Resolución",
@@ -1389,12 +1403,12 @@
           "gte": "Esta puntuación o superior",
           "lte": "Esta puntuación o inferior"
         },
-        "groupEditedFiles": "Include edited files in groups",
-        "groupIgnoreMetadata": "Ignore mismatched EXIF dates",
-        "groupOff": "Off",
-        "groupPreferJpeg": "Prefer JPEG",
-        "groupPreferRaw": "Prefer RAW",
-        "groupRawJpeg": "Group RAW + JPEG",
+        "groupEditedFiles": "Incluir archivos editados en grupos",
+        "groupIgnoreMetadata": "Ignorar fechas EXIF que no coinciden",
+        "groupOff": "Desactivado",
+        "groupPreferJpeg": "Preferir JPEG",
+        "groupPreferRaw": "Preferir RAW",
+        "groupRawJpeg": "Agrupar RAW + JPEG",
         "metadataAlways": "Siempre",
         "metadataHover": "Al pasar el ratón",
         "metadataOff": "Desactivado",
@@ -1509,10 +1523,7 @@
       "originalRatio": "Proporción original"
     },
     "thumbnailSize": {
-      "large": "Grande",
-      "list": "Lista",
-      "medium": "Mediano",
-      "small": "Pequeño"
+      "list": "Lista"
     },
     "tooltips": {
       "communityPresets": "Ajustes de la comunidad",
@@ -1689,40 +1700,29 @@
       "title": "Cribar imágenes"
     },
     "focusStack": {
-      "cancel": "Cancelar",
-      "close": "Cerrar",
       "depthMap": "Mapa de profundidad",
       "description": "Combina varias imágenes con diferentes distancias de enfoque en una sola imagen perfectamente nítida.",
       "descriptionWithCount_many": "Combina {{count}} imágenes con diferentes distancias de enfoque en una sola imagen perfectamente nítida.",
       "descriptionWithCount_one": "Combina {{count}} imagen con diferentes distancias de enfoque en una sola imagen perfectamente nítida.",
       "descriptionWithCount_other": "Combina {{count}} imágenes con diferentes distancias de enfoque en una sola imagen perfectamente nítida.",
       "failed": "Error en el apilamiento de enfoque",
-      "initializing": "Inicializando...",
-      "openInEditor": "Abrir en el editor",
-      "result": "Resultado",
-      "save": "Guardar",
+      "method": "Método",
+      "methodDetail": "Detalle",
+      "methodHint": "Detalle conserva las estructuras más finas, como pelos y cerdas. Suave ofrece transiciones más suaves y menos ruido.",
+      "methodSmooth": "Suave",
+      "processing": "Apilando enfoque",
       "savedSuccess": "¡Apilamiento de enfoque guardado con éxito!",
-      "stacking": "Apilando enfoque",
-      "start": "Iniciar",
       "title": "Apilamiento de enfoque"
     },
     "hdr": {
-      "cancel": "Cancelar",
-      "close": "Cerrar",
       "description": "Combina tus exposiciones en horquilla en una sola imagen de Alto Rango Dinámico (HDR).",
       "descriptionWithCount": "Combina {{count}} exposiciones en horquilla en una sola imagen de Alto Rango Dinámico.",
       "descriptionWithCount_many": "Combina {{count}} exposiciones en horquilla en una sola imagen de Alto Rango Dinámico.",
       "descriptionWithCount_one": "Combina {{count}} exposición en horquilla en una sola imagen de Alto Rango Dinámico.",
       "descriptionWithCount_other": "Combina {{count}} exposiciones en horquilla en una sola imagen de Alto Rango Dinámico.",
       "failed": "Combinación HDR fallida",
-      "initializing": "Inicializando...",
-      "merging": "Combinando HDR",
-      "openInEditor": "Abrir en el editor",
-      "retry": "Reintentar",
-      "save": "Guardar",
+      "processing": "Combinando HDR",
       "savedSuccess": "¡HDR guardado con éxito!",
-      "speedNotice": "Esto puede tardar unos minutos dependiendo del número y tamaño de tus exposiciones.",
-      "start": "Iniciar",
       "title": "Combinar en HDR"
     },
     "importSettings": {
@@ -1771,23 +1771,48 @@
       "zoomInTooltip": "Acercar",
       "zoomOutTooltip": "Alejar"
     },
-    "panorama": {
+    "merge": {
+      "autoCrop": "Recorte automático",
+      "autoCropHint": "Recorta los bordes que no cubren todas las imágenes.",
       "cancel": "Cancelar",
       "close": "Cerrar",
-      "descCount": "Combina {{count}} imágenes superpuestas en un panorama continuo.",
-      "descCount_many": "Combina {{count}} imágenes superpuestas en un panorama continuo.",
-      "descCount_one": "Combina {{count}} imagen superpuesta en un panorama continuo.",
-      "descCount_other": "Combina {{count}} imágenes superpuestas en un panorama continuo.",
-      "descGeneric": "Combina tus imágenes superpuestas en un panorama continuo.",
-      "failed": "Panorama fallido",
+      "excludedImages": "{{count}} imágenes no se pudieron emparejar y se omitieron",
+      "excludedImages_many": "{{count}} de imágenes no se pudieron emparejar y se omitieron",
+      "excludedImages_one": "{{count}} imagen no se pudo emparejar y se omitió",
+      "excludedImages_other": "{{count}} imágenes no se pudieron emparejar y se omitieron",
       "initializing": "Inicializando...",
       "openInEditor": "Abrir en el editor",
+      "outputInfo": "{{images}} imágenes · {{width}} × {{height}} px",
+      "result": "Resultado",
       "retry": "Reintentar",
       "save": "Guardar",
-      "savedSuccess": "¡Panorama guardado con éxito!",
+      "saving": "Guardando…",
       "speedNotice": "Esto puede tardar unos minutos dependiendo del número y tamaño de las imágenes.",
       "start": "Iniciar",
-      "stitchingProgress": "Uniendo panorama",
+      "unalignedImages_many": "No se pudieron alinear {{count}} de imágenes",
+      "unalignedImages_one": "No se pudo alinear {{count}} imagen",
+      "unalignedImages_other": "No se pudieron alinear {{count}} imágenes"
+    },
+    "panorama": {
+      "autoProjectionUsed": "Usando {{projection}}",
+      "boundaryWarp": "Deformación de límites",
+      "boundaryWarpHint": "Estira los bordes para llenar el encuadre en lugar de recortarlos.",
+      "description": "Combina tus imágenes superpuestas en un panorama continuo.",
+      "descriptionWithCount": "Combina {{count}} imágenes superpuestas en un panorama continuo.",
+      "descriptionWithCount_many": "Combina {{count}} imágenes superpuestas en un panorama continuo.",
+      "descriptionWithCount_one": "Combina {{count}} imagen superpuesta en un panorama continuo.",
+      "descriptionWithCount_other": "Combina {{count}} imágenes superpuestas en un panorama continuo.",
+      "exposureCompensation": "Compensación de exposición",
+      "exposureCompensationHint": "Iguala la exposición, el balance de blancos y el viñeteado entre las imágenes.",
+      "failed": "Panorama fallido",
+      "processing": "Uniendo panorama",
+      "projection": "Proyección",
+      "projectionAuto": "Automática",
+      "projectionCylindrical": "Cilíndrica",
+      "projectionFallback": "{{requested}} no cubre este campo de visión, usando {{projection}}",
+      "projectionPerspective": "Perspectiva",
+      "projectionSpherical": "Esférica",
+      "savedSuccess": "¡Panorama guardado con éxito!",
       "title": "Unir panorama"
     },
     "renameAlbum": {
@@ -2174,12 +2199,34 @@
       "alwaysDecodeRawLabel": "Decodificar RAW siempre para miniaturas",
       "backend": "Backend de procesamiento",
       "backendDesc": "Selecciona la API de gráficos. Se recomienda 'Auto'. Puede solucionar bloqueos en algunos sistemas.",
+      "backendFallback": "{{failed}} falló al iniciarse en esta GPU, así que por ahora se usa {{using}}.",
+      "backendFallbackRetry": "Volver a probar {{failed}}",
+      "backendFallbackRetryPending": "{{failed}} se volverá a probar en el próximo inicio.",
       "backends": {
         "auto": "Auto",
         "dx12": "DirectX 12",
         "gl": "OpenGL",
         "metal": "Metal",
         "vulkan": "Vulkan"
+      },
+      "colorManagement": {
+        "chooseProfile": "Elegir perfil",
+        "modeAuto": "Automático (perfil del sistema)",
+        "modeCustom": "Perfil ICC personalizado",
+        "modeOff": "Desactivado",
+        "previewGamut": "Gama de vista previa",
+        "previewGamutDesc": "Elige el espacio de color en el que exportas. sRGB muestra cómo se verá una exportación sRGB o para la web. Gama amplia muestra también los colores fuera de sRGB que tu monitor puede mostrar, como en exportaciones Display P3 o Adobe RGB.",
+        "previewGamutSrgb": "sRGB",
+        "previewGamutWide": "Gama amplia",
+        "previewGamutWideSpace": "Gama amplia ({{space}})",
+        "profile": "Perfil del monitor",
+        "profileDesc": "Convierte la vista previa del editor al perfil de color de tu monitor para que los colores se vean correctamente en pantallas calibradas y de gama amplia. Las exportaciones no se ven afectadas.",
+        "statusInvalid": "No se pudo cargar este perfil.",
+        "statusNone": "No se encontró ningún perfil de monitor. La vista previa se muestra como sRGB.",
+        "statusProfile": "Usando {{name}}.",
+        "statusSystem": "El sistema operativo gestiona los colores.",
+        "statusUnavailable": "La gestión del color requiere el Renderizado directo WGPU.",
+        "wideGamut": "Vista previa de gama amplia ({{space}})."
       },
       "defaultAdjustments": {
         "addCamera": "Añadir cámara…",
@@ -2206,6 +2253,9 @@
         "sliderResetNeutral": "Valor neutro",
         "title": "Ajustes predeterminados"
       },
+      "display": {
+        "title": "Pantalla"
+      },
       "dynamicDesc": "El editor renderiza la vista previa para que coincida con la densidad real de píxeles de tu pantalla. Esto garantiza que cada detalle se represente con precisión de 1:1 píxeles, proporcionando la máxima claridad al hacer zoom y verificar el enfoque.",
       "editIn": {
         "add": "Añadir programa",
@@ -2223,6 +2273,21 @@
         "title": "Editar en"
       },
       "enableLivePreviews": "Activar vistas previas en vivo",
+      "hdr": {
+        "display": "Pantalla HDR",
+        "displayDesc": "Muestra las iluminaciones más brillantes que el blanco normal en una pantalla HDR. Las sombras y los medios tonos no cambian y las exportaciones estándar no se ven afectadas.",
+        "enableDisplay": "Usar HDR en el editor",
+        "gainMaps": "Fotos HDR",
+        "gainMapsAlways": "Siempre en HDR",
+        "gainMapsAuto": "Automático",
+        "gainMapsDesc": "Las fotos con un mapa de ganancia HDR, como las de los teléfonos recientes, pueden abrirse con sus luces HDR brillantes o como su versión SDR normal. Automático las abre en HDR mientras se usa HDR en el editor. Esto también decide cómo se exportan estas fotos.",
+        "gainMapsNever": "Siempre en SDR",
+        "headroom": "Rango de iluminaciones",
+        "headroomDesc": "Hasta dónde pueden superar las iluminaciones el blanco normal. También se usa en las exportaciones HDR.",
+        "statusActive": "Esta pantalla está en modo HDR.",
+        "statusInactive": "Esta pantalla no está en modo HDR. Activa HDR en los ajustes de pantalla del sistema para ver el efecto.",
+        "statusUnsupported": "HDR requiere el Renderizado directo WGPU y, en Linux, una sesión de Wayland con soporte HDR."
+      },
       "highDpi": "Renderizado de alto DPI",
       "highDpiDesc": "Renderizar vistas previas en la resolución de píxeles físicos nativa de {{dpr}}x de tu pantalla. Produce la vista previa más nítida posible, pero utiliza mucha más memoria.",
       "highDpiDescStandard": "Este ajuste solo afecta a las pantallas de alto DPI. Tu pantalla actual tiene resolución estándar.",
@@ -2251,7 +2316,7 @@
         "baselineExposure": "Exposición base",
         "baselineExposureAmount": "Cantidad base",
         "baselineExposureAmountDesc": "Exposición añadida a los archivos RAW. darktable usa +0,7 EV.",
-        "baselineExposureDesc": "Aclara los archivos RAW en una cantidad fija, más la etiqueta DNG BaselineExposure si existe.",
+        "baselineExposureDesc": "Aclara los archivos RAW en una cantidad fija, o en el valor de la etiqueta DNG BaselineExposure si existe.",
         "colorNr": "Reducción base del ruido de color",
         "colorNrDesc": "Aplica un filtro bilateral cruzado temprano en el pipeline para eliminar el ruido de croma. Valor más alto = mayor reducción.",
         "defaultNonRawTonemapper": "Mapeador de tonos predeterminado no RAW",
@@ -2291,6 +2356,15 @@
       "qualities": {
         "high": "Alta calidad",
         "performance": "Rendimiento"
+      },
+      "rawDecoding": "Decodificación RAW",
+      "rawDecodingDesc": "Selecciona dónde se decodifican los archivos RAW. 'Auto' usa la GPU y cambia a la CPU si no puede con tus imágenes. 'GPU' siempre prueba primero la GPU. 'CPU' es más lenta, pero funciona en todos los sistemas.",
+      "rawDecodingFallback": "La GPU falló con archivos RAW grandes, así que por ahora los archivos de {{megapixels}} MP o más se revelan en la CPU.",
+      "rawDecodingFallbackRetry": "Volver a probar la GPU",
+      "rawDecodingOptions": {
+        "auto": "Auto",
+        "cpu": "CPU",
+        "gpu": "GPU"
       },
       "renderScale": "Escala de resolución de renderizado",
       "renderScaleDesc": "Escala la resolución de renderizado en relación con tu pantalla. Valores más bajos mejoran el rendimiento en pantallas de alta resolución a costa de cierta nitidez.",
@@ -2424,13 +2498,11 @@
     "bottomBar": {
       "imagesSelected": "{{current}} de {{total}} imágenes seleccionadas",
       "tooltips": {
-        "collapseFilmstrip": "Contraer Tira de imágenes",
         "collapseLeft": "Contraer panel izquierdo",
         "collapseRight": "Contraer panel derecho",
         "copyPasteSettings": "Copiar y Pegar ajustes",
         "copySettings": "Copiar ajustes",
         "customZoom": "Haz clic para introducir un porcentaje de zoom personalizado",
-        "expandFilmstrip": "Expandir Tira de imágenes",
         "expandLeft": "Expandir panel izquierdo",
         "expandRight": "Expandir panel derecho",
         "export": "Exportar",

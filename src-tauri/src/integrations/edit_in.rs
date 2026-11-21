@@ -17,7 +17,7 @@ use crate::app::settings::{EditInApp, EditInMode};
 use crate::app::state::AppState;
 use crate::decode::formats::{is_raw_file, is_supported_image_file};
 use crate::export::export_images_and_wait;
-use crate::export::settings::{ExportAdjustmentsMode, ExportSettings, OutputColorSpace, TiffBitDepth};
+use crate::export::settings::{ExportAdjustmentsMode, ExportSettings, TiffBitDepth};
 use crate::library::sidecars::parse_virtual_path;
 
 type Fingerprint = (SystemTime, u64);
@@ -243,7 +243,8 @@ async fn render_tiff(
     let export_settings = ExportSettings {
         jpeg_quality: 100,
         tiff_bit_depth: TiffBitDepth::Sixteen,
-        output_color_space: OutputColorSpace::Srgb,
+        color_space: Default::default(),
+        hdr: false,
         resize: None,
         border: None,
         pad: None,

@@ -933,6 +933,9 @@
       "clearSearch": "Clear search",
       "searchCount": "{{count}} presets",
       "searchNoResults": "No presets match your search",
+      "toasts": {
+        "importFailed": "Failed to import {{fileName}}: {{error}}"
+      },
       "tooltips": {
         "explore": "Explore Community Presets",
         "export": "Export all presets to .rrpreset file",
@@ -956,12 +959,16 @@
         "crop": "Crop",
         "export": "Export",
         "history": "History",
+        "filmstrip": "Filmstrip",
         "info": "Info",
         "inpaint": "Inpaint",
         "masks": "Masks",
         "presets": "Presets",
         "tethering": "Tethering"
       }
+    },
+    "toasts": {
+      "embeddedPreview": "RapidRAW couldn't decode this RAW file, so you're seeing and editing the camera's embedded JPEG preview. Expect lower quality and less editing headroom than a real RAW."
     },
     "toolbar": {
       "history": "History",
@@ -972,6 +979,7 @@
         "compare": "Before / After (B) or Modes (Right-click)",
         "focalLength": "Focal Length",
         "fullscreen": "Toggle Fullscreen (F)",
+        "hdr": "HDR Preview",
         "iso": "ISO",
         "redo": "Redo (Ctrl+Y) or History (Right-click)",
         "shutterSpeed": "Shutter Speed",
@@ -1028,7 +1036,13 @@
       "selectFolderTitle_other": "Select Folder to Export {{count}} Images"
     },
     "file": {
+      "colorSpace": "Color space",
       "dpi": "DPI",
+      "hdr": "HDR output",
+      "hdrJpegHint": "Adds a gain map: HDR screens show brighter highlights, everything else shows the normal photo.",
+      "hdrJxlHint": "Saves a true HDR file (PQ, Rec. 2020). Needs an HDR-capable viewer.",
+      "hdrNoPreview": "This display can't show the HDR highlights. The export will still contain them.",
+      "hdrPreviewOff": "Turn on HDR in the editor toolbar to preview the highlights.",
       "quality": "Quality",
       "qualityLossless": "Quality (Lossless)",
       "resolution": "Resolution",
@@ -1497,10 +1511,7 @@
       "originalRatio": "Original Ratio"
     },
     "thumbnailSize": {
-      "large": "Large",
-      "list": "List",
-      "medium": "Medium",
-      "small": "Small"
+      "list": "List"
     },
     "tooltips": {
       "communityPresets": "Community Presets",
@@ -1675,38 +1686,27 @@
       "title": "Cull Images"
     },
     "focusStack": {
-      "cancel": "Cancel",
-      "close": "Close",
       "depthMap": "Depth Map",
       "description": "Combine multiple images with varying focus distances into a single perfectly sharp image.",
       "descriptionWithCount_one": "Combine {{count}} image with varying focus distances into a single perfectly sharp image.",
       "descriptionWithCount_other": "Combine {{count}} images with varying focus distances into a single perfectly sharp image.",
       "failed": "Focus Stack Failed",
-      "initializing": "Initializing...",
-      "openInEditor": "Open in Editor",
-      "result": "Result",
-      "save": "Save",
+      "method": "Method",
+      "methodDetail": "Detail",
+      "methodHint": "Detail keeps the finest structures like hairs and bristles. Smooth gives softer transitions and less noise.",
+      "methodSmooth": "Smooth",
+      "processing": "Stacking Focus",
       "savedSuccess": "Focus Stack Saved Successfully!",
-      "stacking": "Stacking Focus",
-      "start": "Start",
       "title": "Focus Stacking"
     },
     "hdr": {
-      "cancel": "Cancel",
-      "close": "Close",
       "description": "Combine your bracketed exposures into a single High Dynamic Range image.",
       "descriptionWithCount": "Combine {{count}} bracketed exposures into a single High Dynamic Range image.",
       "descriptionWithCount_one": "Combine {{count}} bracketed exposure into a single High Dynamic Range image.",
       "descriptionWithCount_other": "Combine {{count}} bracketed exposures into a single High Dynamic Range image.",
       "failed": "HDR Merge Failed",
-      "initializing": "Initializing...",
-      "merging": "Merging HDR",
-      "openInEditor": "Open in Editor",
-      "retry": "Retry",
-      "save": "Save",
+      "processing": "Merging HDR",
       "savedSuccess": "HDR Saved Successfully!",
-      "speedNotice": "This may take a few minutes depending on the number and size of your exposures.",
-      "start": "Start",
       "title": "Merge to HDR"
     },
     "importSettings": {
@@ -1755,22 +1755,45 @@
       "zoomInTooltip": "Zoom In",
       "zoomOutTooltip": "Zoom Out"
     },
-    "panorama": {
+    "merge": {
+      "autoCrop": "Auto Crop",
+      "autoCropHint": "Crops the edges that aren't covered by every image.",
       "cancel": "Cancel",
       "close": "Close",
-      "descCount": "Combine {{count}} overlapping images into a seamless panorama.",
-      "descCount_one": "Combine {{count}} overlapping image into a seamless panorama.",
-      "descCount_other": "Combine {{count}} overlapping images into a seamless panorama.",
-      "descGeneric": "Combine your overlapping images into a seamless panorama.",
-      "failed": "Panorama Failed",
+      "excludedImages": "{{count}} images couldn't be matched and were left out",
+      "excludedImages_one": "{{count}} image couldn't be matched and was left out",
+      "excludedImages_other": "{{count}} images couldn't be matched and were left out",
       "initializing": "Initializing...",
       "openInEditor": "Open in Editor",
+      "outputInfo": "{{images}} images · {{width}} × {{height}} px",
+      "result": "Result",
       "retry": "Retry",
       "save": "Save",
-      "savedSuccess": "Panorama Saved Successfully!",
+      "saving": "Saving…",
       "speedNotice": "This may take a few minutes depending on the number and size of images.",
       "start": "Start",
-      "stitchingProgress": "Stitching Panorama",
+      "unalignedImages_one": "{{count}} image couldn't be aligned",
+      "unalignedImages_other": "{{count}} images couldn't be aligned"
+    },
+    "panorama": {
+      "autoProjectionUsed": "Using {{projection}}",
+      "boundaryWarp": "Boundary Warp",
+      "boundaryWarpHint": "Stretches the edges to fill the frame instead of cropping them away.",
+      "description": "Combine your overlapping images into a seamless panorama.",
+      "descriptionWithCount": "Combine {{count}} overlapping images into a seamless panorama.",
+      "descriptionWithCount_one": "Combine {{count}} overlapping image into a seamless panorama.",
+      "descriptionWithCount_other": "Combine {{count}} overlapping images into a seamless panorama.",
+      "exposureCompensation": "Exposure Compensation",
+      "exposureCompensationHint": "Evens out exposure, white balance and vignetting between the images.",
+      "failed": "Panorama Failed",
+      "processing": "Stitching Panorama",
+      "projection": "Projection",
+      "projectionAuto": "Auto",
+      "projectionCylindrical": "Cylindrical",
+      "projectionFallback": "{{requested}} can't cover this field of view, using {{projection}}",
+      "projectionPerspective": "Perspective",
+      "projectionSpherical": "Spherical",
+      "savedSuccess": "Panorama Saved Successfully!",
       "title": "Stitch Panorama"
     },
     "renameAlbum": {
@@ -2153,12 +2176,34 @@
       "alwaysDecodeRawLabel": "Always decode RAW for thumbnails",
       "backend": "Processing Backend",
       "backendDesc": "Select the graphics API. 'Auto' is recommended. May fix crashes on some systems.",
+      "backendFallback": "{{failed}} crashed while starting on this GPU, so {{using}} is used for now.",
+      "backendFallbackRetry": "Try {{failed}} again",
+      "backendFallbackRetryPending": "{{failed}} will be tried again on the next start.",
       "backends": {
         "auto": "Auto",
         "dx12": "DirectX 12",
         "gl": "OpenGL",
         "metal": "Metal",
         "vulkan": "Vulkan"
+      },
+      "colorManagement": {
+        "chooseProfile": "Choose Profile",
+        "modeAuto": "Automatic (system profile)",
+        "modeCustom": "Custom ICC profile",
+        "modeOff": "Off",
+        "previewGamut": "Preview Gamut",
+        "previewGamutDesc": "Match this to the color space you export in. sRGB shows what an sRGB or web export will look like. Wide gamut also shows the colors beyond sRGB that your monitor can display, as in Display P3 or Adobe RGB exports.",
+        "previewGamutSrgb": "sRGB",
+        "previewGamutWide": "Wide gamut",
+        "previewGamutWideSpace": "Wide gamut ({{space}})",
+        "profile": "Monitor Profile",
+        "profileDesc": "Converts the editor preview to your monitor's color profile, so colors look right on calibrated and wide gamut displays. Exports are not affected.",
+        "statusInvalid": "This profile could not be loaded.",
+        "statusNone": "No monitor profile found. The preview is shown as sRGB.",
+        "statusProfile": "Using {{name}}.",
+        "statusSystem": "Colors are managed by the operating system.",
+        "statusUnavailable": "Color management needs WGPU Direct Rendering.",
+        "wideGamut": "Wide gamut preview ({{space}})."
       },
       "defaultAdjustments": {
         "addCamera": "Add camera…",
@@ -2185,6 +2230,9 @@
         "sliderResetNeutral": "Neutral value",
         "title": "Default Adjustments"
       },
+      "display": {
+        "title": "Display"
+      },
       "dynamicDesc": "The editor renders the preview to match your display's actual pixel density. This ensures that every detail is represented with 1:1 pixel accuracy, providing maximum clarity when zooming and checking focus.",
       "editIn": {
         "add": "Add Program",
@@ -2202,6 +2250,21 @@
         "title": "Edit In"
       },
       "enableLivePreviews": "Enable Live Previews",
+      "hdr": {
+        "display": "HDR Display",
+        "displayDesc": "Shows highlights brighter than normal white on an HDR display. Shadows and midtones stay the same, and standard exports are not affected.",
+        "enableDisplay": "Use HDR in the editor",
+        "gainMaps": "HDR Photos",
+        "gainMapsAlways": "Always as HDR",
+        "gainMapsAuto": "Automatic",
+        "gainMapsDesc": "Photos with an HDR gain map, such as those from recent phones, can open with their bright HDR highlights or as their regular SDR version. Automatic opens them as HDR while HDR is used in the editor. This also decides how these photos are exported.",
+        "gainMapsNever": "Always as SDR",
+        "headroom": "Highlight Range",
+        "headroomDesc": "How far highlights may rise above normal white. Also used for HDR exports.",
+        "statusActive": "This display is in HDR mode.",
+        "statusInactive": "This display is not in HDR mode. Turn on HDR in the system display settings to see the effect.",
+        "statusUnsupported": "HDR needs WGPU Direct Rendering, and on Linux a Wayland session with HDR support."
+      },
       "highDpi": "High-DPI Rendering",
       "highDpiDesc": "Render previews at your screen's native {{dpr}}x physical pixel resolution. Produces the sharpest possible preview but uses significantly more memory.",
       "highDpiDescStandard": "This setting only affects high-DPI displays. Your current display is standard resolution.",
@@ -2230,7 +2293,7 @@
         "baselineExposure": "Baseline Exposure",
         "baselineExposureAmount": "Baseline Amount",
         "baselineExposureAmountDesc": "Exposure added to RAW files. darktable uses +0.7 EV.",
-        "baselineExposureDesc": "Brightens RAW files by a fixed amount, plus the DNG BaselineExposure tag if present.",
+        "baselineExposureDesc": "Brightens RAW files by a fixed amount, or by the DNG BaselineExposure tag instead when present.",
         "colorNr": "Base Color Noise Reduction",
         "colorNrDesc": "Applies a cross-bilateral filter early in the pipeline to remove chroma noise. Higher value = Stronger NR.",
         "defaultNonRawTonemapper": "Default Non-RAW Tonemapper",
@@ -2270,6 +2333,15 @@
       "qualities": {
         "high": "High Quality",
         "performance": "Performance"
+      },
+      "rawDecoding": "RAW Decoding",
+      "rawDecodingDesc": "Select where RAW files are decoded. 'Auto' uses the GPU and switches to the CPU if it can't handle your images. 'GPU' always tries the GPU first. 'CPU' is slower but works on every system.",
+      "rawDecodingFallback": "The GPU failed on large RAW files, so files of {{megapixels}} MP and larger are developed on the CPU for now.",
+      "rawDecodingFallbackRetry": "Try the GPU again",
+      "rawDecodingOptions": {
+        "auto": "Auto",
+        "cpu": "CPU",
+        "gpu": "GPU"
       },
       "renderScale": "Render Resolution Scale",
       "renderScaleDesc": "Scales the render resolution relative to your display. Lower values improve performance on high-resolution screens at the cost of some sharpness.",
@@ -2403,13 +2475,11 @@
     "bottomBar": {
       "imagesSelected": "{{current}} of {{total}} images selected",
       "tooltips": {
-        "collapseFilmstrip": "Collapse Filmstrip",
         "collapseLeft": "Collapse Left Panel",
         "collapseRight": "Collapse Right Panel",
         "copyPasteSettings": "Copy & Paste Settings",
         "copySettings": "Copy Settings",
         "customZoom": "Click to enter custom zoom percentage",
-        "expandFilmstrip": "Expand Filmstrip",
         "expandLeft": "Expand Left Panel",
         "expandRight": "Expand Right Panel",
         "export": "Export",

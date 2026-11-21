@@ -945,7 +945,7 @@
       "dialog": {
         "allPresetFiles": "Všechny soubory s presety",
         "exportAllTitle": "Exportovat všechny presety",
-        "exportTitle": "Export {{type}}",
+        "exportTitle": "Exportovat {{type}}",
         "importPresetsTitle": "Importovat presety",
         "legacyPreset": "Starší preset",
         "presetFile": "Soubor s presetem",
@@ -979,6 +979,9 @@
         "masks": "Masky"
       },
       "title": "Předvolby",
+      "toasts": {
+        "importFailed": "Import souboru {{fileName}} se nezdařil: {{error}}"
+      },
       "tooltips": {
         "explore": "Prozkoumejte předvolby komunity",
         "export": "Exportujte všechny předvolby do souboru .rrpreset",
@@ -1001,12 +1004,16 @@
         "adjust": "Upravit",
         "crop": "Oříznout",
         "export": "Export",
+        "filmstrip": "Filmový pás",
         "info": "Info",
         "inpaint": "Retuš",
         "masks": "Masky",
         "presets": "Presety",
         "tethering": "Tetherované snímání"
       }
+    },
+    "toasts": {
+      "embeddedPreview": "RapidRAW nedokázal dekódovat tento soubor RAW, takže vidíte a upravujete vložený náhled JPEG z fotoaparátu. Počítejte s nižší kvalitou a menší rezervou pro úpravy než u skutečného RAW."
     },
     "toolbar": {
       "history": "Historie",
@@ -1017,6 +1024,7 @@
         "compare": "Před / po (B) nebo režimy (pravé tlačítko)",
         "focalLength": "Ohnisková vzdálenost",
         "fullscreen": "Přepnout na celou obrazovku (F)",
+        "hdr": "Náhled HDR",
         "iso": "ISO",
         "redo": "Znovu (Ctrl+Y) nebo Historie (kliknutí pravým tlačítkem)",
         "shutterSpeed": "Rychlost závěrky",
@@ -1075,7 +1083,13 @@
       "selectFolderTitle_other": "Vyberte složku pro export {{count}} fotografií"
     },
     "file": {
+      "colorSpace": "Barevný prostor",
       "dpi": "DPI",
+      "hdr": "Výstup HDR",
+      "hdrJpegHint": "Přidá gain mapu: HDR displeje zobrazí jasnější světla, vše ostatní zobrazí běžnou fotku.",
+      "hdrJxlHint": "Uloží skutečný HDR soubor (PQ, Rec. 2020). Vyžaduje prohlížeč s podporou HDR.",
+      "hdrNoPreview": "Tento displej neumí zobrazit světla HDR. Export je přesto bude obsahovat.",
+      "hdrPreviewOff": "Zapněte HDR na panelu nástrojů editoru, abyste viděli náhled světel.",
       "quality": "Kvalita",
       "qualityLossless": "Kvalita (bezeztrátová)",
       "resolution": "Rozlišení",
@@ -1129,12 +1143,12 @@
       "estimatedSize": "Odhadovaná velikost souboru: ~{{size}}",
       "estimatedTotalSize": "Odhadovaná celková velikost: ~{{size}}",
       "estimatingSize": "Odhad velikosti...",
-      "exportMultiple": "Export {{count}} {{label}}",
-      "exportMultiple_few": "Export {{count}} {{label}}",
-      "exportMultiple_many": "Export {{count}} {{label}}",
-      "exportMultiple_one": "Export {{count}} {{label}}",
-      "exportMultiple_other": "Export {{count}} {{label}}",
-      "exportSingle": "Export {{label}}",
+      "exportMultiple": "Exportovat {{count}} {{label}}",
+      "exportMultiple_few": "Exportovat {{count}} {{label}}",
+      "exportMultiple_many": "Exportovat {{count}} {{label}}",
+      "exportMultiple_one": "Exportovat {{count}} {{label}}",
+      "exportMultiple_other": "Exportovat {{count}} {{label}}",
+      "exportSingle": "Exportovat {{label}}",
       "exporting": "Export…",
       "exportingProgress": "Exportuje se… ({{current}}/{{total}})",
       "failed": "Export se nezdařil",
@@ -1542,10 +1556,7 @@
       "originalRatio": "Původní poměr"
     },
     "thumbnailSize": {
-      "large": "Velký",
-      "list": "Seznam",
-      "medium": "Střední",
-      "small": "Malý"
+      "list": "Seznam"
     },
     "tooltips": {
       "communityPresets": "Presety komunity",
@@ -1724,8 +1735,6 @@
       "title": "Třídění snímků"
     },
     "focusStack": {
-      "cancel": "Zrušit",
-      "close": "Zavřít",
       "depthMap": "Hloubková mapa",
       "description": "Zkombinujte více snímků s různou ohniskovou vzdáleností do jednoho dokonale ostrého snímku.",
       "descriptionWithCount_few": "Zkombinujte {{count}} snímky s různou ohniskovou vzdáleností do jednoho dokonale ostrého snímku.",
@@ -1733,18 +1742,15 @@
       "descriptionWithCount_one": "Zkombinujte {{count}} snímek s různou ohniskovou vzdáleností do jednoho dokonale ostrého snímku.",
       "descriptionWithCount_other": "Zkombinujte {{count}} snímků s různou ohniskovou vzdáleností do jednoho dokonale ostrého snímku.",
       "failed": "Skládání zaostření se nezdařilo",
-      "initializing": "Inicializace...",
-      "openInEditor": "Otevřít v Editoru",
-      "result": "Výsledek",
-      "save": "Uložit",
+      "method": "Metoda",
+      "methodDetail": "Detail",
+      "methodHint": "Detail zachová nejjemnější struktury, jako jsou chloupky a štětiny. Hladký dává měkčí přechody a méně šumu.",
+      "methodSmooth": "Hladký",
+      "processing": "Skládání zaostření",
       "savedSuccess": "Složený snímek byl úspěšně uložen!",
-      "stacking": "Skládání zaostření",
-      "start": "Start",
       "title": "Skládání zaostření"
     },
     "hdr": {
-      "cancel": "Zrušit",
-      "close": "Zavřít",
       "description": "Spojte snímky s různou expozicí do jednoho obrazu s vysokým dynamickým rozsahem.",
       "descriptionWithCount": "Spojte {{count}} expoziční snímky do jednoho obrazu s vysokým dynamickým rozsahem.",
       "descriptionWithCount_few": "Spojte {{count}} expoziční snímky do jednoho obrazu s vysokým dynamickým rozsahem.",
@@ -1752,14 +1758,8 @@
       "descriptionWithCount_one": "Spojte {{count}} expoziční snímek do jednoho obrazu s vysokým dynamickým rozsahem.",
       "descriptionWithCount_other": "Spojte {{count}} expozičních snímků do jednoho obrazu s vysokým dynamickým rozsahem.",
       "failed": "Sloučení HDR se nezdařilo",
-      "initializing": "Inicializace...",
-      "merging": "Sloučení HDR",
-      "openInEditor": "Otevřít v Editoru",
-      "retry": "Zkuste to znovu",
-      "save": "Uložit",
+      "processing": "Sloučení HDR",
       "savedSuccess": "HDR bylo úspěšně uloženo!",
-      "speedNotice": "To může trvat několik minut v závislosti na počtu a velikosti vašich expozic.",
-      "start": "Start",
       "title": "Sloučit do HDR"
     },
     "importSettings": {
@@ -1808,24 +1808,51 @@
       "zoomInTooltip": "Přiblížit",
       "zoomOutTooltip": "Oddálit"
     },
-    "panorama": {
+    "merge": {
+      "autoCrop": "Automatické oříznutí",
+      "autoCropHint": "Ořízne okraje, které nepokrývají všechny snímky.",
       "cancel": "Zrušit",
       "close": "Zavřít",
-      "descCount": "Kombinovat {{count}} překrývající se snímky do plynulého panoramatu.",
-      "descCount_few": "Kombinovat {{count}} překrývající se snímky do hladkého panoramatu.",
-      "descCount_many": "Kombinovat {{count}} překrývajícího se snímku do hladkého panoramatu.",
-      "descCount_one": "Kombinovat {{count}} překrývající se snímek do hladkého panoramatu.",
-      "descCount_other": "Kombinovat {{count}} překrývajících se snímků do hladkého panoramatu.",
-      "descGeneric": "Spojte své překrývající se snímky do plynulého panoramatu.",
-      "failed": "Panorama se nezdařilo",
+      "excludedImages": "{{count}} snímků nebylo možné spárovat a bylo vynecháno",
+      "excludedImages_few": "{{count}} snímky nebylo možné spárovat a byly vynechány",
+      "excludedImages_many": "{{count}} snímku nebylo možné spárovat a bylo vynecháno",
+      "excludedImages_one": "{{count}} snímek nebylo možné spárovat a byl vynechán",
+      "excludedImages_other": "{{count}} snímků nebylo možné spárovat a bylo vynecháno",
       "initializing": "Inicializace...",
       "openInEditor": "Otevřít v Editoru",
+      "outputInfo": "Snímky: {{images}} · {{width}} × {{height}} px",
+      "result": "Výsledek",
       "retry": "Zkuste to znovu",
       "save": "Uložit",
-      "savedSuccess": "Panorama úspěšně uloženo!",
+      "saving": "Ukládání…",
       "speedNotice": "To může trvat několik minut v závislosti na počtu a velikosti snímků.",
       "start": "Start",
-      "stitchingProgress": "Skládání panorama",
+      "unalignedImages_few": "{{count}} snímky se nepodařilo zarovnat",
+      "unalignedImages_many": "{{count}} snímku se nepodařilo zarovnat",
+      "unalignedImages_one": "{{count}} snímek se nepodařilo zarovnat",
+      "unalignedImages_other": "{{count}} snímků se nepodařilo zarovnat"
+    },
+    "panorama": {
+      "autoProjectionUsed": "Použita: {{projection}}",
+      "boundaryWarp": "Deformace okrajů",
+      "boundaryWarpHint": "Roztáhne okraje tak, aby vyplnily snímek, místo aby je ořízla.",
+      "description": "Spojte své překrývající se snímky do plynulého panoramatu.",
+      "descriptionWithCount": "Kombinovat {{count}} překrývající se snímky do plynulého panoramatu.",
+      "descriptionWithCount_few": "Kombinovat {{count}} překrývající se snímky do hladkého panoramatu.",
+      "descriptionWithCount_many": "Kombinovat {{count}} překrývajícího se snímku do hladkého panoramatu.",
+      "descriptionWithCount_one": "Kombinovat {{count}} překrývající se snímek do hladkého panoramatu.",
+      "descriptionWithCount_other": "Kombinovat {{count}} překrývajících se snímků do hladkého panoramatu.",
+      "exposureCompensation": "Kompenzace expozice",
+      "exposureCompensationHint": "Vyrovná expozici, vyvážení bílé a vinětaci mezi snímky.",
+      "failed": "Panorama se nezdařilo",
+      "processing": "Skládání panorama",
+      "projection": "Projekce",
+      "projectionAuto": "Automatická",
+      "projectionCylindrical": "Válcová",
+      "projectionFallback": "{{requested}} nepokryje toto zorné pole, použita: {{projection}}",
+      "projectionPerspective": "Perspektivní",
+      "projectionSpherical": "Sférická",
+      "savedSuccess": "Panorama úspěšně uloženo!",
       "title": "Spojit panorama"
     },
     "renameAlbum": {
@@ -2216,12 +2243,34 @@
       "alwaysDecodeRawLabel": "Vždy dekódovat RAW pro miniatury",
       "backend": "Backend zpracování",
       "backendDesc": "Vyberte grafické API. Doporučuje se „Auto“. Může opravit pády na některých systémech.",
+      "backendFallback": "{{failed}} při spuštění na této GPU spadl, proto se zatím používá {{using}}.",
+      "backendFallbackRetry": "Zkusit znovu {{failed}}",
+      "backendFallbackRetryPending": "{{failed}} se znovu vyzkouší při příštím spuštění.",
       "backends": {
         "auto": "Auto",
         "dx12": "DirectX 12",
         "gl": "OpenGL",
         "metal": "Metal",
         "vulkan": "Vulkan"
+      },
+      "colorManagement": {
+        "chooseProfile": "Vybrat profil",
+        "modeAuto": "Automaticky (systémový profil)",
+        "modeCustom": "Vlastní profil ICC",
+        "modeOff": "Vypnuto",
+        "previewGamut": "Gamut náhledu",
+        "previewGamutDesc": "Nastavte podle barevného prostoru, ve kterém exportujete. sRGB ukazuje, jak bude vypadat export do sRGB nebo pro web. Široký gamut zobrazí i barvy mimo sRGB, které váš monitor umí zobrazit, jako u exportů v Display P3 nebo Adobe RGB.",
+        "previewGamutSrgb": "sRGB",
+        "previewGamutWide": "Široký gamut",
+        "previewGamutWideSpace": "Široký gamut ({{space}})",
+        "profile": "Profil monitoru",
+        "profileDesc": "Převádí náhled v editoru do barevného profilu vašeho monitoru, aby barvy odpovídaly na kalibrovaných a širokogamutových displejích. Exporty nejsou ovlivněny.",
+        "statusInvalid": "Tento profil se nepodařilo načíst.",
+        "statusNone": "Profil monitoru nebyl nalezen. Náhled se zobrazuje jako sRGB.",
+        "statusProfile": "Používá se {{name}}.",
+        "statusSystem": "Barvy spravuje operační systém.",
+        "statusUnavailable": "Správa barev vyžaduje Přímé vykreslování WGPU.",
+        "wideGamut": "Náhled v širokém gamutu ({{space}})."
       },
       "defaultAdjustments": {
         "addCamera": "Přidat fotoaparát…",
@@ -2248,6 +2297,9 @@
         "sliderResetNeutral": "Neutrální hodnota",
         "title": "Výchozí úpravy"
       },
+      "display": {
+        "title": "Displej"
+      },
       "dynamicDesc": "Editor vykresluje náhled tak, aby odpovídal skutečné hustotě pixelů vašeho displeje. Tím je zajištěno, že každý detail je zobrazen s přesností pixelů 1:1, což poskytuje maximální jasnost při přibližování a kontrole zaostření.",
       "editIn": {
         "add": "Přidat program",
@@ -2265,6 +2317,21 @@
         "title": "Upravit v"
       },
       "enableLivePreviews": "Povolit živé náhledy",
+      "hdr": {
+        "display": "Zobrazení HDR",
+        "displayDesc": "Na HDR displeji zobrazuje světla jasnější než běžná bílá. Stíny a střední tóny zůstávají stejné a běžné exporty se nemění.",
+        "enableDisplay": "Používat HDR v editoru",
+        "gainMaps": "Fotky HDR",
+        "gainMapsAlways": "Vždy jako HDR",
+        "gainMapsAuto": "Automaticky",
+        "gainMapsDesc": "Fotky s mapou zisku HDR, například z nových telefonů, lze otevřít s jasnými světly HDR, nebo jako běžnou verzi SDR. Automaticky je otevírá jako HDR, dokud se v editoru používá HDR. Toto nastavení také určuje, jak se tyto fotky exportují.",
+        "gainMapsNever": "Vždy jako SDR",
+        "headroom": "Rozsah světel",
+        "headroomDesc": "Jak daleko mohou světla přesáhnout běžnou bílou. Platí také pro HDR exporty.",
+        "statusActive": "Tento displej je v režimu HDR.",
+        "statusInactive": "Tento displej není v režimu HDR. Zapněte HDR v nastavení zobrazení systému, abyste efekt viděli.",
+        "statusUnsupported": "HDR vyžaduje Přímé vykreslování WGPU a v Linuxu relaci Wayland s podporou HDR."
+      },
       "highDpi": "High-DPI rendering",
       "highDpiDesc": "Vykreslovat náhledy v nativním {{dpr}}x fyzickém rozlišení pixelů obrazovky. Poskytuje nejostřejší možný náhled, ale spotřebovává výrazně více paměti.",
       "highDpiDescStandard": "Toto nastavení ovlivňuje pouze displeje s vysokým DPI. Váš aktuální displej má standardní rozlišení.",
@@ -2293,7 +2360,7 @@
         "baselineExposure": "Základní expozice",
         "baselineExposureAmount": "Velikost základu",
         "baselineExposureAmountDesc": "Expozice přidaná k souborům RAW. darktable používá +0,7 EV.",
-        "baselineExposureDesc": "Zesvětlí soubory RAW o pevnou hodnotu a přičte značku DNG BaselineExposure, pokud existuje.",
+        "baselineExposureDesc": "Zesvětlí soubory RAW o pevnou hodnotu, nebo místo ní o hodnotu značky DNG BaselineExposure, pokud existuje.",
         "colorNr": "Redukce šumu základní barvy",
         "colorNrDesc": "Aplikuje křížový bilaterální filtr na začátku procesu k odstranění barevného šumu. Vyšší hodnota = silnější redukce šumu.",
         "defaultNonRawTonemapper": "Výchozí Non-RAW Tonemapper",
@@ -2307,7 +2374,7 @@
         "enableTonemapperOverride": "Povolte přepsání Tonemapperu",
         "highlightPreservation": "Kompenzace ochrany světel",
         "highlightPreservationDesc": "Vrátí expozici sníženou režimy ochrany světel fotoaparátu, např. Fujifilm DR200/DR400 nebo Nikon Active D-Lighting.",
-        "highlightRecovery": "RAW Highlight Recovery",
+        "highlightRecovery": "Obnova světel RAW",
         "highlightRecoveryDesc": "Řídí, kolik detailů se obnoví z přepálených světel v souborech RAW. Vyšší hodnoty obnoví více detailů, ale mohou způsobit fialové artefakty.",
         "linearOptions": {
           "auto": "Auto",
@@ -2333,6 +2400,15 @@
       "qualities": {
         "high": "Vysoká kvalita",
         "performance": "Výkon"
+      },
+      "rawDecoding": "Dekódování RAW",
+      "rawDecodingDesc": "Vyberte, kde se dekódují soubory RAW. „Auto“ používá GPU a přepne na CPU, pokud GPU vaše snímky nezvládne. „GPU“ vždy nejprve zkusí GPU. „CPU“ je pomalejší, ale funguje na každém systému.",
+      "rawDecodingFallback": "GPU selhala u velkých souborů RAW, proto se soubory od {{megapixels}} MP zatím vyvolávají na CPU.",
+      "rawDecodingFallbackRetry": "Zkusit znovu GPU",
+      "rawDecodingOptions": {
+        "auto": "Auto",
+        "cpu": "CPU",
+        "gpu": "GPU"
       },
       "renderScale": "Měřítko rozlišení vykreslení",
       "renderScaleDesc": "Mění měřítko rozlišení vykreslení vzhledem k vašemu displeji. Nižší hodnoty zlepšují výkon na displejích s vysokým rozlišením za cenu určité ostrosti.",
@@ -2466,13 +2542,11 @@
     "bottomBar": {
       "imagesSelected": "{{current}} z {{total}} vybrané snímky",
       "tooltips": {
-        "collapseFilmstrip": "Sbalit filmový pás",
         "collapseLeft": "Sbalit levý panel",
         "collapseRight": "Sbalit pravý panel",
         "copyPasteSettings": "Nastavení kopírování a vkládání",
         "copySettings": "Kopírovat úpravy",
         "customZoom": "Kliknutím zadejte vlastní procento přiblížení",
-        "expandFilmstrip": "Rozbalit filmový pás",
         "expandLeft": "Rozbalit levý panel",
         "expandRight": "Rozbalit pravý panel",
         "export": "Export",
@@ -2496,7 +2570,7 @@
       "hue": "Odstín",
       "hueAbbreviation": "H:",
       "luminance": "Jas",
-      "reset": "Reset",
+      "reset": "Resetovat",
       "saturation": "Sytost",
       "saturationAbbreviation": "S:"
     },

@@ -5,6 +5,7 @@ use crate::metadata::exif_processing::{
 };
 use crate::metadata::sidecar::{ImageFlag, ImageMetadata};
 use crate::metadata::xmp;
+use crate::render::color_space::working_icc_profile;
 use image::ImageDecoder;
 use little_exif::exif_tag::ExifTag;
 use little_exif::filetype::FileExtension;
@@ -265,28 +266,32 @@ pub fn write_image_with_metadata(
     image_bytes: &mut Vec<u8>,
     original_path_str: &str,
     output_format: &str,
-    keep_metadata: bool,
     strip_gps: bool,
     xmp: &ExportXmp,
     dpi: Option<u16>,
+    is_srgb: bool,
 ) -> Result<(), String> {
-    if !keep_metadata {
-        return Ok(());
-    }
-
     let file_type = match output_format.to_lowercase().as_str() {
         "jpg" | "jpeg" => FileExtension::JPEG,
         "png" => FileExtension::PNG {
             as_zTXt_chunk: true,
         },
         "webp" => FileExtension::WEBP,
+        "jxl" => FileExtension::JXL,
         _ => return Ok(()),
     };
 
     if file_type == FileExtension::WEBP {
         convert_webp_to_extended(image_bytes);
     }
-    write_exif_metadata(image_bytes, original_path_str, file_type, strip_gps, dpi)?;
+    write_exif_metadata(
+        image_bytes,
+        original_path_str,
+        file_type,
+        strip_gps,
+        dpi,
+        is_srgb,
+    )?;
     embed_xmp(image_bytes, original_path_str, file_type, strip_gps, xmp);
 
     Ok(())
@@ -298,13 +303,15 @@ fn write_exif_metadata(
     file_type: FileExtension,
     strip_gps: bool,
     dpi: Option<u16>,
+    is_srgb: bool,
 ) -> Result<(), String> {
     let dimensions = image::ImageReader::new(Cursor::new(image_bytes.as_slice()))
         .with_guessed_format()
         .ok()
         .and_then(|reader| reader.into_dimensions().ok());
 
-    let Some(mut metadata) = collect_metadata_from_source(original_path_str, strip_gps, dimensions)
+    let Some(mut metadata) =
+        collect_metadata_from_source(original_path_str, strip_gps, dimensions, is_srgb)
     else {
         return Ok(());
     };
@@ -334,6 +341,7 @@ pub fn collect_metadata_from_source(
     original_path_str: &str,
     strip_gps: bool,
     dimensions: Option<(u32, u32)>,
+    is_srgb: bool,
 ) -> Option<Metadata> {
     let original_path = Path::new(original_path_str);
     if !original_path.exists() {
@@ -568,7 +576,11 @@ pub fn collect_metadata_from_source(
 
     metadata.set_tag(ExifTag::Software("RapidRAW".to_string()));
     metadata.set_tag(ExifTag::Orientation(vec![1u16]));
-    metadata.set_tag(ExifTag::ColorSpace(vec![1u16]));
+    metadata.set_tag(ExifTag::ColorSpace(vec![if is_srgb {
+        EXIF_COLOR_SPACE_SRGB
+    } else {
+        EXIF_COLOR_SPACE_UNCALIBRATED
+    }]));
     metadata.set_tag(ExifTag::ExifVersion(b"0232".to_vec()));
     metadata.set_tag(ExifTag::FlashpixVersion(b"0100".to_vec()));
 
@@ -632,6 +644,7 @@ fn embed_xmp(
         FileExtension::JPEG => embed_jpeg_xmp(image_bytes, &packet),
         FileExtension::PNG { .. } => embed_png_xmp(image_bytes, &packet),
         FileExtension::WEBP => embed_webp_xmp(image_bytes, &packet),
+        FileExtension::JXL => embed_jxl_xmp(image_bytes, &packet),
         _ => {}
     }
 }
@@ -838,6 +851,52 @@ fn embed_webp_xmp(image_bytes: &mut Vec<u8>, packet: &str) {
     update_riff_size(image_bytes);
 }
 
+pub fn embed_webp_icc(image_bytes: &mut Vec<u8>, icc: &[u8]) {
+    const VP8X_FLAGS: usize = 20;
+    const VP8X_END: usize = 30;
+    const ICC_FLAG: u8 = 0x20;
+
+    convert_webp_to_extended(image_bytes);
+    if image_bytes.len() < VP8X_END
+        || &image_bytes[0..4] != b"RIFF"
+        || &image_bytes[12..16] != b"VP8X"
+    {
+        return;
+    }
+
+    let mut chunk = Vec::with_capacity(icc.len() + 9);
+    chunk.extend_from_slice(b"ICCP");
+    chunk.extend_from_slice(&(icc.len() as u32).to_le_bytes());
+    chunk.extend_from_slice(icc);
+    if !icc.len().is_multiple_of(2) {
+        chunk.push(0);
+    }
+    image_bytes[VP8X_FLAGS] |= ICC_FLAG;
+    image_bytes.splice(VP8X_END..VP8X_END, chunk);
+    update_riff_size(image_bytes);
+}
+
+fn embed_jxl_xmp(image_bytes: &mut Vec<u8>, packet: &str) {
+    if jxl_encoder::container::is_bare_codestream(image_bytes) {
+        *image_bytes =
+            jxl_encoder::container::wrap_in_container(image_bytes, None, Some(packet.as_bytes()));
+        return;
+    }
+
+    if !jxl_encoder::container::is_container(image_bytes) {
+        return;
+    }
+
+    let Ok(box_size) = u32::try_from(8 + packet.len()) else {
+        log::warn!("Skipping XMP metadata: packet exceeds JXL box size");
+        return;
+    };
+
+    image_bytes.extend_from_slice(&box_size.to_be_bytes());
+    image_bytes.extend_from_slice(b"xml ");
+    image_bytes.extend_from_slice(packet.as_bytes());
+}
+
 fn convert_webp_to_extended(image_bytes: &mut Vec<u8>) {
     const VP8_FRAME: usize = 20;
 
@@ -877,7 +936,7 @@ pub fn encode_converted_image(
     source_path_str: &str,
 ) -> Result<Vec<u8>, String> {
     let dimensions = image::GenericImageView::dimensions(image);
-    let metadata = collect_metadata_from_source(source_path_str, false, Some(dimensions));
+    let metadata = collect_metadata_from_source(source_path_str, false, Some(dimensions), false);
 
     match extension.to_lowercase().as_str() {
         "tif" | "tiff" => {
@@ -897,14 +956,17 @@ pub fn encode_converted_image(
                 image,
                 samples,
                 metadata.as_ref(),
-                Some(crate::export::encode::SRGB_ICC_PROFILE),
+                Some(working_icc_profile()),
                 None,
             )
         }
         "png" => {
             let mut bytes = Vec::new();
+            let mut encoder = image::codecs::png::PngEncoder::new(&mut bytes);
+            image::ImageEncoder::set_icc_profile(&mut encoder, working_icc_profile().to_vec())
+                .map_err(|e| format!("Failed to embed color profile: {}", e))?;
             image
-                .write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)
+                .write_with_encoder(encoder)
                 .map_err(|e| format!("Failed to encode image: {}", e))?;
 
             if let Some(metadata) = metadata
@@ -955,3 +1017,5 @@ fn rawler_to_ir64(val: rawler::formats::tiff::SRational) -> iR64 {
 }
 
 const EXIF_DATETIME_FORMAT: &str = "%Y:%m:%d %H:%M:%S";
+const EXIF_COLOR_SPACE_SRGB: u16 = 1;
+const EXIF_COLOR_SPACE_UNCALIBRATED: u16 = 0xFFFF;

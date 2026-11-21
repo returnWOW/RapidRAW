@@ -23,6 +23,8 @@ import {
 } from '../utils/editHistory';
 import { deleteImageHistories, loadImageHistory, moveImageHistory } from '../utils/historyStorage';
 import { HslMixerProperty } from '../utils/hslMixer';
+import { getCroppedDimensions } from '../utils/cropUtils';
+import { getDevicePixelRatio } from '../utils/displayScale';
 
 export type CenterMarker = 'vignette' | 'centre';
 
@@ -95,6 +97,8 @@ interface EditorState {
   histogram: ChannelConfig | null;
   waveform: WaveformData | null;
   isWaveformVisible: boolean;
+  scopeWhite: number;
+  displayRevision: number;
   activeWaveformChannel: string;
   waveformHeight: number;
 
@@ -150,7 +154,8 @@ interface EditorState {
   pushHistory: (newAdjustments: Adjustments, label?: string, path?: string | null) => void;
   undo: () => void;
   redo: () => void;
-  resetHistory: (initialState: Adjustments) => void;
+  resetHistory: (initialState: Adjustments, path?: string | null) => void;
+  stashHistory: () => void;
   goToHistoryIndex: (index: number) => void;
   beginImageHistory: (path: string, initial: Adjustments) => void;
   hydrateImageHistory: (path: string) => Promise<void>;
@@ -159,6 +164,21 @@ interface EditorState {
   renameImageHistory: (oldPath: string, newPath: string) => void;
   endImageHistory: (fallback: Adjustments) => void;
 }
+
+export const getZoomContentSize = (state: Pick<EditorState, 'originalSize' | 'adjustments'>): ImageDimensions =>
+  getCroppedDimensions(
+    state.originalSize.width,
+    state.originalSize.height,
+    state.adjustments.orientationSteps || 0,
+    state.adjustments.crop,
+  );
+
+export const getZoomPercent = (state: Pick<EditorState, 'originalSize' | 'adjustments' | 'displaySize'>): number => {
+  const contentWidth = getZoomContentSize(state).width;
+  return contentWidth > 0 && state.displaySize.width > 0
+    ? (state.displaySize.width * getDevicePixelRatio()) / contentWidth
+    : 1.0;
+};
 
 export const debouncedSetHistory = debounce((newAdj: Adjustments, label: string | undefined, path: string | null) => {
   const state = useEditorStore.getState();
@@ -202,6 +222,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   histogram: null,
   waveform: null,
   isWaveformVisible: false,
+  scopeWhite: 1,
+  displayRevision: 0,
   activeWaveformChannel: 'luma',
   waveformHeight: 220,
 
@@ -322,8 +344,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       return state;
     }),
 
-  resetHistory: (initialState) => {
-    const path = get().historyPath;
+  resetHistory: (initialState, path) => {
+    if (path && get().historyPath !== path) {
+      get().resetHistoryForImage(path, initialState);
+      return;
+    }
+    const historyPath = get().historyPath;
     set((state) => {
       const byPath = { ...state.historyByPath };
       if (state.historyPath) delete byPath[state.historyPath];
@@ -346,10 +372,28 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           : {}),
       };
     });
-    if (path) void deleteImageHistories([path]);
+    if (historyPath) void deleteImageHistories([historyPath]);
   },
 
-  goToHistoryIndex: (index) =>
+  // persist the running timeline of the current image without leaving it;
+  // used before an image switch begins so nothing in flight is lost
+  stashHistory: () =>
+    set((state) => {
+      if (!state.historyPath || state.historyHydrating) return state;
+      const byPath = { ...state.historyByPath };
+      if (state.history.length > 1) {
+        byPath[state.historyPath] = {
+          history: state.history,
+          labels: state.historyLabels,
+          times: state.historyTimes,
+          index: state.historyIndex,
+        };
+        trimTimelineCache(byPath, state.historyPath);
+      }
+      return { historyByPath: byPath };
+    }),
+
+  goToHistoryIndex: (index) => {
     set((state) => {
       if (index >= 0 && index < state.history.length) {
         return {
@@ -359,7 +403,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         };
       }
       return state;
-    }),
+    });
+  },
 
   // Switching images keeps each image's timeline for the session, so the
   // history of one picture survives going away and coming back. Timelines

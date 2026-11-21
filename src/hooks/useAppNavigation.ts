@@ -13,10 +13,11 @@ import { LibraryViewMode } from '../types/settings';
 import { ImageFile } from '../types/library';
 import { INITIAL_ADJUSTMENTS } from '../utils/adjustments';
 import { adjustmentsFromMetadata } from '../utils/developDefaults';
-import { mergeHistoryUiState } from '../utils/editHistory';
+import { isSameValue, mergeHistoryUiState } from '../utils/editHistory';
 import { globalImageCache } from '../utils/ImageLRUCache';
 import { decodeImage } from '../utils/decodeImage';
 import { debouncedSave, debouncedSetHistory } from './useEditorActions';
+import { notifyEmbeddedPreview } from './useImageLoader';
 import { clearLibrarySelection } from './useLibraryActions';
 import { computeSortedLibrary } from './useSortedLibrary';
 import { getImmichAlbumImages, isImmichAlbumId } from '../utils/immichApi';
@@ -173,7 +174,7 @@ export function useAppNavigation({ clearThumbnailQueue, refs }: AppNavigationPro
   const handleImageSelect = useCallback(
     async (path: string, openInEditor: boolean = true) => {
       const generation = ++imageSelectGeneration;
-      const { selectedImage, isSliderDragging, resetHistory, beginImageHistory, setEditor } = useEditorStore.getState();
+      const { selectedImage, isSliderDragging, resetHistory, beginImageHistory, stashHistory, setEditor } = useEditorStore.getState();
       const { setLibrary } = useLibraryStore.getState();
       const { setUI } = useUIStore.getState();
       const wasEditorVisible = useUIStore.getState().activeView === 'editor';
@@ -215,6 +216,7 @@ export function useAppNavigation({ clearThumbnailQueue, refs }: AppNavigationPro
         setEditor({ wgpuPhase: 'hidden' });
       }
 
+      stashHistory();
       selectedImagePathRef.current = path;
 
       const { multiSelectedPaths } = useLibraryStore.getState();
@@ -277,6 +279,7 @@ export function useAppNavigation({ clearThumbnailQueue, refs }: AppNavigationPro
             isBackendReadyRef.current = true;
             currentResRef.current = 0;
             setEditor({ originalSize: { width: _result.width, height: _result.height } });
+            notifyEmbeddedPreview(_result);
           })
           .catch((err: any) => {
             if (String(err).includes('cancelled')) return;
@@ -289,9 +292,9 @@ export function useAppNavigation({ clearThumbnailQueue, refs }: AppNavigationPro
           .then((metadata: any) => {
             if (selectedImagePathRef.current !== path) return;
             const freshAdjustments = adjustmentsFromMetadata(metadata.adjustments);
-            if (!isSliderDragging && JSON.stringify(cached.adjustments) !== JSON.stringify(freshAdjustments)) {
+            if (!isSliderDragging && !isSameValue(cached.adjustments, freshAdjustments)) {
               setEditor({ adjustments: freshAdjustments });
-              resetHistory(freshAdjustments);
+              resetHistory(freshAdjustments, path);
               prevAdjustmentsRef.current = { path, adjustments: freshAdjustments };
               globalImageCache.set(path, { ...cached, adjustments: freshAdjustments });
             }

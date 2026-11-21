@@ -2,6 +2,7 @@ use crate::app::settings::{AppSettings, load_settings};
 use crate::app::state::{AppState, LoadedImage, PreviewTarget};
 use crate::decode::baseline_exposure::BaselineOptions;
 use crate::decode::formats::is_raw_file;
+use crate::decode::hdr_source::{self, GainMap, HdrTransfer};
 use crate::decode::white_balance::WhiteBalance;
 
 use crate::library::file_ops::read_file_mapped;
@@ -11,29 +12,33 @@ use crate::metadata::sidecar::ImageMetadata;
 use crate::metadata::{exif_processing, sidecar};
 use crate::render::adjustment_utils::effective_baseline_exposure;
 use crate::render::cache_utils::{DecodeFingerprint, FlightRole, clear_preview_slot};
+use crate::render::color_space::{
+    OutputColorSpace, fit_gamut, srgb_decode, srgb_encode, srgb_to_working, srgb_transfer,
+    working_profile,
+};
 use crate::render::geometry::{apply_orientation, inverse_transform_mask};
-use crate::render::image_processing::{apply_srgb_to_linear, linear_channel_to_srgb};
+use crate::render::image_processing::apply_working_display_to_srgb;
 use anyhow::{Context, Result, anyhow};
 use base64::{Engine as _, engine::general_purpose};
 use exif::{Reader as ExifReader, Tag};
 use glam::{DMat3, Mat3, Vec3};
 use image::{DynamicImage, GenericImageView, ImageDecoder, ImageReader, Rgb32FImage, imageops};
 use moxcms::{
-    ColorProfile, DataColorSpace, Layout, RenderingIntent, ToneReprCurve, TransformOptions,
+    CicpColorPrimaries, CmsError, ColorProfile, DataColorSpace, Layout, RenderingIntent,
+    ToneReprCurve, TransformF32Executor, TransformOptions,
 };
 use rawler::Orientation;
 use rayon::prelude::*;
 use serde::Deserialize;
 use serde_json::Value;
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Cursor;
 use std::panic;
 use std::path::Path;
-use std::sync::OnceLock;
 use std::sync::{
-    Arc,
+    Arc, Mutex, OnceLock,
     atomic::{AtomicUsize, Ordering},
 };
 use tauri::Manager;
@@ -46,6 +51,7 @@ pub struct LoadImageResult {
     pub exif: HashMap<String, String>,
     pub is_raw: bool,
     pub as_shot_white_balance: WhiteBalance,
+    pub is_embedded_preview: bool,
 }
 
 #[derive(Deserialize)]
@@ -59,20 +65,11 @@ struct PatchMaskInfo {
     sub_masks: Vec<SubMask>,
 }
 
+pub const PATCH_PRIMARIES: &str = "rec2020";
+
 fn srgb_to_linear_lut() -> &'static [f32; 256] {
     static LUT: OnceLock<[f32; 256]> = OnceLock::new();
-    LUT.get_or_init(|| {
-        let mut lut = [0.0f32; 256];
-        for (i, v) in lut.iter_mut().enumerate() {
-            let x = i as f32 / 255.0;
-            *v = if x <= 0.04045 {
-                x / 12.92
-            } else {
-                ((x + 0.055) / 1.055).powf(2.4)
-            };
-        }
-        lut
-    })
+    LUT.get_or_init(|| std::array::from_fn(|i| srgb_decode(i as f32 / 255.0)))
 }
 
 pub fn load_and_composite(
@@ -107,8 +104,11 @@ pub fn prepare_base_image_cow<'a>(
 
     let denoised = crate::ai::denoise::apply_ai_denoise(base_image, path, adjustments);
     let upscaled = crate::ai::upscale::apply_ai_upscale(base_image, denoised, path, adjustments);
-    match crate::adjustments::negative_conversion::apply_negative_conversion(upscaled, adjustments)
-    {
+    match crate::adjustments::negative_conversion::apply_negative_conversion(
+        upscaled,
+        is_raw_file(path),
+        adjustments,
+    ) {
         Cow::Owned(prepared) if !has_patches => Ok(Cow::Owned(prepared)),
         prepared => composite_patches_cow(prepared, base_image.dimensions(), path, adjustments),
     }
@@ -136,6 +136,12 @@ pub fn load_base_image_from_bytes(
         bytes,
     );
 
+    let record_embedded_preview = |used: bool| {
+        if !use_fast_raw_dev {
+            set_embedded_preview(path_for_ext_check, used);
+        }
+    };
+
     if is_raw_file(path_for_ext_check)
         && !use_fast_raw_dev
         && settings.use_apple_raw9.unwrap_or(false)
@@ -147,7 +153,10 @@ pub fn load_base_image_from_bytes(
         }
 
         match crate::decode::apple_raw::develop_raw9(bytes, path_for_ext_check) {
-            Ok(image) => return Ok(image),
+            Ok(image) => {
+                record_embedded_preview(false);
+                return Ok(image);
+            }
             Err(e) => log::warn!(
                 "Apple RAW 9 unavailable for '{}', falling back to rawler: {}",
                 path_for_ext_check,
@@ -168,7 +177,10 @@ pub fn load_base_image_from_bytes(
                 cancel_token,
             )
         }) {
-            Ok(Ok(image)) => Ok(image),
+            Ok(Ok(image)) => {
+                record_embedded_preview(false);
+                Ok(image)
+            }
             Ok(Err(e)) => {
                 let classified = classify_raw_develop_error(path_for_ext_check, e);
 
@@ -181,43 +193,28 @@ pub fn load_base_image_from_bytes(
                     path_for_ext_check,
                     classified
                 );
-                if let Some(preview) = safe_embedded_preview_fallback(bytes, path_for_ext_check) {
-                    log::warn!(
-                        "Using embedded preview fallback for '{}' ({}x{})",
-                        path_for_ext_check,
-                        preview.width(),
-                        preview.height()
-                    );
-
-                    return Ok(linearize_embedded_preview(preview));
-                }
-                Err(classified)
+                embedded_preview_instead(bytes, path_for_ext_check)
+                    .inspect(|_| record_embedded_preview(true))
+                    .ok_or(classified)
             }
             Err(_) => {
                 log::error!("Panic while processing RAW file: {}", path_for_ext_check);
-                if let Some(preview) = safe_embedded_preview_fallback(bytes, path_for_ext_check) {
-                    log::warn!(
-                        "Using embedded preview fallback for '{}' after RAW decoder panic ({}x{})",
-                        path_for_ext_check,
-                        preview.width(),
-                        preview.height()
-                    );
-
-                    return Ok(linearize_embedded_preview(preview));
-                }
-                Err(anyhow!(
-                    "Failed to process RAW file: {}",
-                    path_for_ext_check
-                ))
+                embedded_preview_instead(bytes, path_for_ext_check)
+                    .inspect(|_| record_embedded_preview(true))
+                    .ok_or_else(|| anyhow!("Failed to process RAW file: {}", path_for_ext_check))
             }
         }
     } else {
-        let image = load_image_with_orientation(bytes, cancel_token)?;
-        if apply_to_non_raws && !use_fast_raw_dev {
+        let (image, linear_peak) =
+            load_image_with_orientation(bytes, cancel_token, settings.decode_gain_maps())?;
+        if let Some(peak) = linear_peak {
+            crate::decode::as_shot::record_source_peak(path_for_ext_check, peak);
+        }
+        Ok(if apply_to_non_raws && !use_fast_raw_dev {
             crate::decode::develop::enhance(image, color_nr_amount, sharpening_amount)
         } else {
-            Ok(image)
-        }
+            image
+        })
     }
 }
 
@@ -361,29 +358,164 @@ pub fn safe_embedded_preview_fallback(bytes: &[u8], path: &str) -> Option<Dynami
     }
 }
 
+fn embedded_preview_paths() -> &'static Mutex<HashSet<String>> {
+    static PATHS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    PATHS.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+fn set_embedded_preview(path: &str, used: bool) {
+    let mut paths = embedded_preview_paths()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    if used {
+        paths.insert(path.to_string());
+    } else {
+        paths.remove(path);
+    }
+}
+
+pub fn is_embedded_preview(path: &str) -> bool {
+    embedded_preview_paths()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .contains(path)
+}
+
+fn embedded_preview_instead(bytes: &[u8], path: &str) -> Option<DynamicImage> {
+    let preview = safe_embedded_preview_fallback(bytes, path)?;
+    log::warn!(
+        "Using embedded preview fallback for '{}' ({}x{})",
+        path,
+        preview.width(),
+        preview.height()
+    );
+    Some(linearize_embedded_preview(preview))
+}
+
 fn linearize_embedded_preview(preview: DynamicImage) -> DynamicImage {
-    let preview = DynamicImage::ImageRgb32F(preview.to_rgb32f());
-    let mut linear_preview = apply_srgb_to_linear(preview).into_rgb32f();
+    const PREVIEW_GAIN: f32 = 0.4;
+    let mut linear_preview = preview.to_rgb32f();
+    let matrix = srgb_to_working() * PREVIEW_GAIN;
     for pixel in linear_preview.pixels_mut() {
-        pixel[0] *= 0.4;
-        pixel[1] *= 0.4;
-        pixel[2] *= 0.4;
+        pixel.0 = (matrix * Vec3::from_array(pixel.0.map(|c| srgb_decode(c.max(0.0))))).to_array();
     }
     DynamicImage::ImageRgb32F(linear_preview)
 }
 
-pub fn load_image_with_orientation(
+enum HdrSource {
+    GainMap(GainMap),
+    Transfer {
+        transfer: HdrTransfer,
+        to_working: Mat3,
+    },
+    Linear {
+        to_working: Mat3,
+    },
+}
+
+struct Decoded {
+    rgb: Rgb32FImage,
+    profile: Option<ProfileToWorking>,
+    hdr: Option<HdrSource>,
+}
+
+fn hdr_to_working(profile: &ColorProfile) -> Mat3 {
+    match profile.cicp.as_ref().map(|cicp| cicp.color_primaries) {
+        Some(CicpColorPrimaries::Bt709) => srgb_to_working(),
+        Some(CicpColorPrimaries::Smpte432) => {
+            OutputColorSpace::DisplayP3.working_matrix().inverse()
+        }
+        Some(CicpColorPrimaries::Bt2020) => OutputColorSpace::Rec2020.working_matrix().inverse(),
+        _ if profile.is_matrix_shaper() => {
+            (colorants(&working_profile()).inverse() * colorants(profile)).as_mat3()
+        }
+        _ => OutputColorSpace::Rec2020.working_matrix().inverse(),
+    }
+}
+
+fn primaries_profile(primaries: zenavif::ColorPrimaries) -> Option<ColorProfile> {
+    match primaries {
+        zenavif::ColorPrimaries::SMPTE432 => Some(ColorProfile::new_display_p3()),
+        zenavif::ColorPrimaries::BT2020 => Some(ColorProfile::new_bt2020()),
+        _ => None,
+    }
+}
+
+fn primaries_to_working(primaries: zenavif::ColorPrimaries) -> Mat3 {
+    match primaries {
+        zenavif::ColorPrimaries::SMPTE432 => OutputColorSpace::DisplayP3.working_matrix().inverse(),
+        zenavif::ColorPrimaries::BT2020 => OutputColorSpace::Rec2020.working_matrix().inverse(),
+        _ => srgb_to_working(),
+    }
+}
+
+fn decode_avif(bytes: &[u8], with_gain_map: bool) -> Result<Decoded> {
+    let avif = crate::decode::avif::decode(bytes, with_gain_map)?;
+    let (profile, transfer) = match avif.color {
+        crate::decode::avif::AvifColor::Icc {
+            icc,
+            transfer: container_transfer,
+        } => {
+            let profile = ColorProfile::new_from_slice(&icc).ok();
+            let transfer = profile
+                .as_ref()
+                .and_then(hdr_source::hdr_transfer)
+                .or(container_transfer);
+            let to_working = profile.as_ref().map(hdr_to_working);
+            (
+                profile.as_ref().and_then(ProfileToWorking::new),
+                transfer.zip(to_working),
+            )
+        }
+        crate::decode::avif::AvifColor::Cicp {
+            primaries,
+            transfer,
+        } => (
+            primaries_profile(primaries)
+                .as_ref()
+                .and_then(ProfileToWorking::new),
+            transfer.map(|transfer| (transfer, primaries_to_working(primaries))),
+        ),
+    };
+    let hdr = match (transfer, avif.gain_map) {
+        (Some((transfer, to_working)), _) => Some(HdrSource::Transfer {
+            transfer,
+            to_working,
+        }),
+        (None, Some(gain_map)) => Some(HdrSource::GainMap(gain_map)),
+        (None, None) => None,
+    };
+    let profile = match hdr {
+        Some(HdrSource::Transfer { .. }) => None,
+        _ => profile,
+    };
+    Ok(Decoded {
+        rgb: avif.rgb,
+        profile,
+        hdr,
+    })
+}
+
+fn decode_with_orientation(
     bytes: &[u8],
-    cancel_token: Option<(Arc<AtomicUsize>, usize)>,
-) -> Result<DynamicImage> {
+    cancel_token: &Option<(Arc<AtomicUsize>, usize)>,
+    with_gain_map: bool,
+) -> Result<Decoded> {
     let check_cancel = || -> Result<()> {
-        if let Some((tracker, generation)) = &cancel_token
+        if let Some((tracker, generation)) = cancel_token
             && tracker.load(Ordering::SeqCst) != *generation
         {
             return Err(anyhow!("Load cancelled"));
         }
         Ok(())
     };
+
+    if crate::decode::avif::is_avif(bytes) {
+        check_cancel()?;
+        let decoded = decode_avif(bytes, with_gain_map)?;
+        check_cancel()?;
+        return Ok(decoded);
+    }
 
     let cursor = Cursor::new(bytes);
     let mut reader = ImageReader::new(cursor.clone())
@@ -396,7 +528,9 @@ pub fn load_image_with_orientation(
 
     let mut decoder = reader.into_decoder().context("Failed to decode image")?;
     let icc_profile = decoder.icc_profile().ok().flatten();
+    let source_color = decoder.color_type();
     let image = DynamicImage::from_decoder(decoder).context("Failed to decode image")?;
+    let base_size = image.dimensions();
     check_cancel()?;
 
     let exif = ExifReader::new()
@@ -407,12 +541,13 @@ pub fn load_image_with_orientation(
             .value
             .get_uint(0)
     });
+    let orientation = orientation.map(|orientation| Orientation::from_u16(orientation as u16));
     let oriented_image = match orientation {
-        Some(orientation) => apply_orientation(image, Orientation::from_u16(orientation as u16)),
+        Some(orientation) => apply_orientation(image, orientation),
         None => image,
     };
 
-    let mut rgb = oriented_image.to_rgb32f();
+    let rgb = oriented_image.to_rgb32f();
     let source_profile = match icc_profile {
         Some(icc) => ColorProfile::new_from_slice(&icc).ok(),
         None => exif
@@ -420,12 +555,155 @@ pub fn load_image_with_orientation(
             .is_some_and(is_exif_adobe_rgb)
             .then(ColorProfile::new_adobe_rgb),
     };
-    if let Some(profile) = source_profile {
-        check_cancel()?;
-        convert_profile_to_srgb(&mut rgb, &profile);
-    }
+    check_cancel()?;
 
-    Ok(DynamicImage::ImageRgb32F(rgb))
+    let transfer = source_profile.as_ref().and_then(hdr_source::hdr_transfer);
+    let hdr = if let (Some(transfer), Some(profile)) = (transfer, &source_profile) {
+        Some(HdrSource::Transfer {
+            transfer,
+            to_working: hdr_to_working(profile),
+        })
+    } else if hdr_source::is_linear_float(source_color, source_profile.as_ref()) {
+        Some(HdrSource::Linear {
+            to_working: source_profile
+                .as_ref()
+                .map_or_else(srgb_to_working, hdr_to_working),
+        })
+    } else if with_gain_map && bytes.starts_with(&[0xFF, 0xD8]) {
+        hdr_source::read_gain_map(bytes, base_size)
+            .map(|gain_map| HdrSource::GainMap(gain_map.oriented(orientation)))
+    } else {
+        None
+    };
+    let profile = match hdr {
+        Some(HdrSource::Transfer { .. } | HdrSource::Linear { .. }) => None,
+        _ => source_profile.as_ref().and_then(ProfileToWorking::new),
+    };
+
+    Ok(Decoded { rgb, profile, hdr })
+}
+
+fn convert_hdr_to_working(
+    image: &mut Rgb32FImage,
+    from_profile: Option<&ProfileToWorking>,
+    hdr: &HdrSource,
+) {
+    let (width, height) = image.dimensions();
+    let row_len = width as usize * 3;
+    if row_len == 0 {
+        return;
+    }
+    let transfer = srgb_transfer();
+    let (matrix, gain) = match hdr {
+        HdrSource::Transfer { to_working, .. } | HdrSource::Linear { to_working } => {
+            (*to_working, None)
+        }
+        HdrSource::GainMap(gain_map) => (
+            from_profile.map_or_else(srgb_to_working, |profile| profile.matrix),
+            Some(gain_map.row_applier(width, height)),
+        ),
+    };
+
+    image.par_chunks_mut(row_len).enumerate().for_each_init(
+        || vec![0.0f32; row_len],
+        |linear, (y, row)| {
+            let mut row_matrix = matrix;
+            match hdr {
+                HdrSource::Transfer { transfer, .. } => {
+                    for (linear, encoded) in linear
+                        .as_chunks_mut::<3>()
+                        .0
+                        .iter_mut()
+                        .zip(row.as_chunks::<3>().0)
+                    {
+                        *linear = transfer.to_relative(*encoded);
+                    }
+                }
+                HdrSource::Linear { .. } => {
+                    for (linear, value) in linear.iter_mut().zip(row.iter()) {
+                        *linear = if value.is_finite() {
+                            value.max(0.0)
+                        } else {
+                            0.0
+                        };
+                    }
+                }
+                HdrSource::GainMap(_) => {
+                    let linearized = from_profile
+                        .is_some_and(|profile| profile.linearize.transform(row, linear).is_ok());
+                    if !linearized {
+                        for (linear, encoded) in linear.iter_mut().zip(row.iter()) {
+                            *linear = transfer.decode(encoded.max(0.0));
+                        }
+                        row_matrix = srgb_to_working();
+                    }
+                }
+            }
+            if let Some(apply_gain) = &gain {
+                apply_gain(y as u32, linear);
+            }
+            for (out, rgb) in row
+                .as_chunks_mut::<3>()
+                .0
+                .iter_mut()
+                .zip(linear.as_chunks::<3>().0)
+            {
+                let working = (row_matrix * Vec3::from_array(*rgb)).to_array();
+                *out = fit_gamut(working, &[None; 3]).map(|c| transfer.encode(c.max(0.0)));
+            }
+        },
+    );
+}
+
+pub fn load_image_with_orientation(
+    bytes: &[u8],
+    cancel_token: Option<(Arc<AtomicUsize>, usize)>,
+    gain_maps: bool,
+) -> Result<(DynamicImage, Option<f32>)> {
+    let Decoded {
+        mut rgb,
+        profile,
+        hdr,
+    } = decode_with_orientation(bytes, &cancel_token, gain_maps)?;
+    let linear_peak = matches!(hdr, Some(HdrSource::Linear { .. }))
+        .then(|| hdr_source::linear_peak(rgb.as_raw()));
+    match &hdr {
+        Some(hdr) => convert_hdr_to_working(&mut rgb, profile.as_ref(), hdr),
+        None => convert_to_working(&mut rgb, profile.as_ref()),
+    }
+    Ok((DynamicImage::ImageRgb32F(rgb), linear_peak))
+}
+
+pub fn load_display_image(bytes: &[u8], path: &str) -> Result<DynamicImage> {
+    crate::metadata::sidecar::persist_exif_if_missing(Path::new(path), path, bytes);
+    let Decoded {
+        mut rgb,
+        profile,
+        hdr,
+    } = decode_with_orientation(bytes, &None, false)?;
+    let mut image = match &hdr {
+        Some(hdr) => {
+            let peak = match hdr {
+                HdrSource::Linear { .. } => {
+                    let peak = hdr_source::linear_peak(rgb.as_raw());
+                    crate::decode::as_shot::record_source_peak(path, peak);
+                    peak
+                }
+                _ => hdr_source::source_peak(bytes),
+            };
+            convert_hdr_to_working(&mut rgb, profile.as_ref(), hdr);
+            let mut image = DynamicImage::ImageRgb32F(rgb);
+            hdr_source::roll_off_encoded(&mut image, peak);
+            image
+        }
+        None if profile.is_none() => return Ok(DynamicImage::ImageRgb32F(rgb)),
+        None => {
+            convert_to_working(&mut rgb, profile.as_ref());
+            DynamicImage::ImageRgb32F(rgb)
+        }
+    };
+    apply_working_display_to_srgb(&mut image, false);
+    Ok(image)
 }
 
 fn is_exif_adobe_rgb(exif: &exif::Exif) -> bool {
@@ -452,89 +730,109 @@ fn colorants(profile: &ColorProfile) -> DMat3 {
     DMat3::from_cols_array_2d(&profile.colorant_matrix().v).transpose()
 }
 
-fn convert_profile_to_srgb(image: &mut Rgb32FImage, source: &ColorProfile) {
-    if source.color_space != DataColorSpace::Rgb || image.width() == 0 {
-        return;
+fn srgb_to_linear_working(src: &[f32], dst: &mut [f32]) {
+    let transfer = srgb_transfer();
+    let matrix = srgb_to_working();
+    for (out, rgb) in dst
+        .as_chunks_mut::<3>()
+        .0
+        .iter_mut()
+        .zip(src.as_chunks::<3>().0)
+    {
+        *out = (matrix * Vec3::from_array(rgb.map(|c| transfer.decode(c.max(0.0))))).to_array();
     }
-    let srgb = ColorProfile::new_srgb();
-    let (target, to_srgb) = if source.is_matrix_shaper() {
-        let matrix = (colorants(&srgb).inverse() * colorants(source)).as_mat3();
-        (with_linear_trc(source.clone()), matrix)
-    } else {
-        (with_linear_trc(srgb), Mat3::IDENTITY)
-    };
+}
 
-    let options = TransformOptions {
-        rendering_intent: RenderingIntent::RelativeColorimetric,
-        ..TransformOptions::default()
-    };
-    let Ok(transform) = source.create_transform_f32(Layout::Rgb, &target, Layout::Rgb, options)
-    else {
-        log::warn!("Unsupported embedded color profile, assuming sRGB");
-        return;
-    };
-    let to_linear_srgb = |src: &[f32], dst: &mut [f32]| {
-        transform.transform(src, dst)?;
-        for rgb in dst.as_chunks_mut::<3>().0 {
-            *rgb = (to_srgb * Vec3::from_array(*rgb)).to_array();
+struct ProfileToWorking {
+    linearize: Arc<TransformF32Executor>,
+    matrix: Mat3,
+}
+
+impl ProfileToWorking {
+    fn new(source: &ColorProfile) -> Option<Self> {
+        if source.color_space != DataColorSpace::Rgb {
+            return None;
         }
-        Ok::<_, moxcms::CmsError>(())
-    };
+        let working = working_profile();
+        let (target, matrix) = if source.is_matrix_shaper() {
+            let matrix = (colorants(&working).inverse() * colorants(source)).as_mat3();
+            (with_linear_trc(source.clone()), matrix)
+        } else {
+            (with_linear_trc(working), Mat3::IDENTITY)
+        };
 
-    const STEPS: usize = 16;
-    let probe: Vec<f32> = (0..(STEPS + 1).pow(3))
-        .flat_map(|i| {
-            [
-                i % (STEPS + 1),
-                i / (STEPS + 1) % (STEPS + 1),
-                i / (STEPS + 1).pow(2),
-            ]
-            .map(|c| c as f32 / STEPS as f32)
-        })
-        .collect();
-    let mut probe_out = vec![0.0f32; probe.len()];
-    if to_linear_srgb(&probe, &mut probe_out).is_err() {
-        return;
-    }
-    let is_srgb = probe.iter().zip(&probe_out).all(|(input, linear)| {
-        (linear_channel_to_srgb(*linear).min(1.0) - input).abs() < 2.0 / 255.0
-    });
-    if is_srgb {
-        return;
+        let options = TransformOptions {
+            rendering_intent: RenderingIntent::RelativeColorimetric,
+            ..TransformOptions::default()
+        };
+        let Ok(linearize) = source.create_transform_f32(Layout::Rgb, &target, Layout::Rgb, options)
+        else {
+            log::warn!("Unsupported embedded color profile, assuming sRGB");
+            return None;
+        };
+        let transform = Self { linearize, matrix };
+
+        const STEPS: usize = 16;
+        let probe: Vec<f32> = (0..(STEPS + 1).pow(3))
+            .flat_map(|i| {
+                [
+                    i % (STEPS + 1),
+                    i / (STEPS + 1) % (STEPS + 1),
+                    i / (STEPS + 1).pow(2),
+                ]
+                .map(|c| c as f32 / STEPS as f32)
+            })
+            .collect();
+        let mut from_profile = vec![0.0f32; probe.len()];
+        if transform.apply(&probe, &mut from_profile).is_err() {
+            log::warn!("Failed to apply embedded color profile, assuming sRGB");
+            return None;
+        }
+        let mut from_srgb = vec![0.0f32; probe.len()];
+        srgb_to_linear_working(&probe, &mut from_srgb);
+        let is_srgb = from_profile
+            .iter()
+            .zip(&from_srgb)
+            .all(|(a, b)| (srgb_encode(*a) - srgb_encode(*b)).abs() < 2.0 / 255.0);
+        (!is_srgb).then_some(transform)
     }
 
+    fn apply(&self, src: &[f32], dst: &mut [f32]) -> Result<(), CmsError> {
+        self.linearize.transform(src, dst)?;
+        for rgb in dst.as_chunks_mut::<3>().0 {
+            *rgb = (self.matrix * Vec3::from_array(*rgb)).to_array();
+        }
+        Ok(())
+    }
+}
+
+fn convert_to_working(image: &mut Rgb32FImage, from_profile: Option<&ProfileToWorking>) {
     let row_len = image.width() as usize * 3;
-    let mut linear = vec![0.0f32; image.as_raw().len()];
-    let converted = linear
-        .par_chunks_mut(row_len)
-        .zip(image.as_raw().par_chunks(row_len))
-        .try_for_each(|(dst, src)| to_linear_srgb(src, dst));
-    if converted.is_err() {
-        log::warn!("Failed to apply embedded color profile, assuming sRGB");
+    if row_len == 0 {
         return;
     }
+    let transfer = srgb_transfer();
 
-    image
-        .as_mut()
-        .par_chunks_exact_mut(3)
-        .zip(linear.par_chunks_exact(3))
-        .for_each(|(out, rgb)| {
-            let peak = rgb[0].max(rgb[1]).max(rgb[2]);
-            if peak <= 0.0 {
-                out.fill(0.0);
-                return;
+    image.par_chunks_mut(row_len).for_each_init(
+        || vec![0.0f32; row_len],
+        |linear, row| {
+            let converted =
+                from_profile.is_some_and(|transform| transform.apply(row, linear).is_ok());
+            if !converted {
+                srgb_to_linear_working(row, linear);
             }
-            let floor = rgb[0].min(rgb[1]).min(rgb[2]);
-            let saturation = if floor < 0.0 {
-                peak / (peak - floor)
-            } else {
-                1.0
-            };
-            let scale = peak.max(1.0);
-            for (o, c) in out.iter_mut().zip(rgb) {
-                *o = linear_channel_to_srgb((peak - (peak - c) * saturation) / scale);
+            for (out, rgb) in row
+                .as_chunks_mut::<3>()
+                .0
+                .iter_mut()
+                .zip(linear.as_chunks::<3>().0)
+            {
+                let fitted = fit_gamut(*rgb, &[None; 3]);
+                let scale = fitted[0].max(fitted[1]).max(fitted[2]).max(1.0);
+                *out = fitted.map(|c| transfer.encode(c / scale));
             }
-        });
+        },
+    );
 }
 
 fn composite_patches_cow<'a>(
@@ -584,6 +882,7 @@ fn composite_patches_cow<'a>(
         mask: image::GrayImage,
         color: image::RgbImage,
         is_srgb_encoded: bool,
+        is_working_space: bool,
     }
 
     let decoded_patches: Result<Vec<DecodedPatch>> = visible_patches
@@ -604,6 +903,8 @@ fn composite_patches_cow<'a>(
                 .get("isSrgbEncoded")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
+            let is_working_space =
+                patch_data.get("primaries").and_then(|v| v.as_str()) == Some(PATCH_PRIMARIES);
 
             let mask_bitmap = if let Some(mask_b64) = patch_data
                 .get("mask")
@@ -701,6 +1002,7 @@ fn composite_patches_cow<'a>(
                 mask: mask_bitmap,
                 color: final_color,
                 is_srgb_encoded,
+                is_working_space,
             })
         })
         .collect();
@@ -710,11 +1012,15 @@ fn composite_patches_cow<'a>(
     let mut composited_image = base_image.into_owned();
     let lut = srgb_to_linear_lut();
 
+    let from_srgb = srgb_to_working();
+
     let get_color = |patch: &DecodedPatch, r: u8, g: u8, b: u8| -> (f32, f32, f32) {
-        if patch.is_srgb_encoded {
-            (lut[r as usize], lut[g as usize], lut[b as usize])
-        } else {
-            (r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0)
+        let linear = || Vec3::new(lut[r as usize], lut[g as usize], lut[b as usize]);
+        match (patch.is_working_space, patch.is_srgb_encoded) {
+            (true, true) => linear().into(),
+            (true, false) => (r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0),
+            (false, true) => (from_srgb * linear()).into(),
+            (false, false) => (from_srgb * linear()).map(srgb_encode).into(),
         }
     };
 
@@ -1091,6 +1397,64 @@ pub fn is_image_cached(
         .contains(&source_path.to_string_lossy(), &fingerprint)
 }
 
+fn file_has_gain_map(source_path: &Path) -> bool {
+    read_file_mapped(source_path).is_ok_and(|bytes| hdr_source::has_gain_map(&bytes))
+}
+
+pub fn refresh_gain_map_decode(
+    state: &AppState,
+    loaded: LoadedImage,
+    settings: &AppSettings,
+) -> LoadedImage {
+    let wanted = settings.decode_gain_maps();
+    if loaded.is_raw || !loaded.has_gain_map || loaded.gain_maps == wanted {
+        return loaded;
+    }
+    let (source_path, _) = parse_virtual_path(&loaded.path);
+    let image = match get_or_decode_pristine(state, &source_path, settings, None) {
+        Ok((image, _)) => image,
+        Err(e) => {
+            log::warn!(
+                "Could not reload '{}' for the gain map setting: {}",
+                loaded.path,
+                e
+            );
+            return loaded;
+        }
+    };
+    let refreshed = LoadedImage {
+        image,
+        as_shot: crate::decode::as_shot::as_shot(&source_path.to_string_lossy()),
+        gain_maps: wanted,
+        ..loaded
+    };
+    let mut current = state
+        .original_image
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    if current
+        .as_ref()
+        .is_some_and(|current| current.path == refreshed.path)
+    {
+        *current = Some(refreshed.clone());
+        drop(current);
+        for target in PreviewTarget::ALL {
+            clear_preview_slot(state, target);
+        }
+        *state
+            .full_warped_cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = None;
+        state
+            .uncropped_source_cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
+        crate::render::cache_utils::clear_preview_stage_caches(state);
+    }
+    refreshed
+}
+
 #[tauri::command]
 pub async fn load_image(
     path: String,
@@ -1133,12 +1497,6 @@ pub async fn load_image(
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clear();
-
-        *state.hdr_result.lock().unwrap_or_else(|e| e.into_inner()) = None;
-        *state
-            .panorama_result
-            .lock()
-            .unwrap_or_else(|e| e.into_inner()) = None;
     }
 
     crate::integrations::immich::ensure_local(&app_handle, &source_path).await?;
@@ -1147,6 +1505,7 @@ pub async fn load_image(
 
     let settings = load_settings(app_handle.clone()).unwrap_or_default();
     let baseline_options = BaselineOptions::from_settings(&settings);
+    let gain_maps = settings.decode_gain_maps();
 
     state
         .decoded_image_cache
@@ -1182,7 +1541,7 @@ pub async fn load_image(
             "Baseline exposure for '{}': {:+.2} EV (DNG baseline {:+.2} EV, highlight preservation {:+.2} EV)",
             source_path_str,
             effective_baseline_exposure(&metadata.adjustments, as_shot, baseline_options),
-            as_shot.exposure.dng_baseline,
+            as_shot.exposure.dng_baseline.unwrap_or(0.0),
             as_shot.exposure.highlight_preservation
         );
     }
@@ -1192,6 +1551,8 @@ pub async fn load_image(
         image: pristine_arc,
         is_raw,
         as_shot,
+        has_gain_map: !is_raw && file_has_gain_map(&source_path),
+        gain_maps,
     });
 
     crate::ai::jobs::prioritize(&app_handle, &path);
@@ -1203,5 +1564,6 @@ pub async fn load_image(
         exif: exif_data,
         is_raw,
         as_shot_white_balance: as_shot.white_balance,
+        is_embedded_preview: is_embedded_preview(&source_path_str),
     })
 }

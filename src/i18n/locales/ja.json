@@ -926,6 +926,9 @@
         "masks": "マスク"
       },
       "title": "プリセット",
+      "toasts": {
+        "importFailed": "{{fileName}} のインポートに失敗しました: {{error}}"
+      },
       "tooltips": {
         "explore": "コミュニティのプリセットを検索",
         "export": "すべてのプリセットを .rrpreset ファイルとして書き出し",
@@ -948,6 +951,7 @@
         "adjust": "補正",
         "crop": "切り抜き",
         "export": "書き出し",
+        "filmstrip": "フィルムストリップ",
         "info": "情報",
         "inpaint": "インペイント",
         "masks": "マスク",
@@ -955,15 +959,19 @@
         "tethering": "テザー撮影"
       }
     },
+    "toasts": {
+      "embeddedPreview": "RapidRAW はこの RAW ファイルをデコードできなかったため、カメラに埋め込まれた JPEG プレビューを表示・編集しています。本来の RAW より画質が低く、編集の余裕も少なくなります。"
+    },
     "toolbar": {
       "history": "履歴",
-      "switchToVariant": "Switch to {{label}}",
+      "switchToVariant": "{{label}} に切り替え",
       "tooltips": {
         "aperture": "絞り値",
         "backToLibrary": "ライブラリに戻る",
         "compare": "補正前 / 補正後 (B) またはモード (右クリック)",
         "focalLength": "焦点距離",
         "fullscreen": "全画面表示切り替え (F)",
+        "hdr": "HDR プレビュー",
         "iso": "ISO感度",
         "redo": "やり直し (Ctrl+Y) または履歴 (右クリック)",
         "shutterSpeed": "シャッタースピード",
@@ -1020,7 +1028,13 @@
       "selectFolderTitle_other": "{{count}} 枚の画像を書き出すフォルダを選択"
     },
     "file": {
+      "colorSpace": "カラースペース",
       "dpi": "DPI",
+      "hdr": "HDR出力",
+      "hdrJpegHint": "ゲインマップを追加します。HDR画面ではハイライトがより明るく表示され、それ以外では通常の写真が表示されます。",
+      "hdrJxlHint": "本来のHDRファイル（PQ、Rec. 2020）として保存します。HDR対応のビューアが必要です。",
+      "hdrNoPreview": "このディスプレイでは HDR のハイライトを表示できません。書き出したファイルには含まれます。",
+      "hdrPreviewOff": "ハイライトをプレビューするには、エディターのツールバーで HDR をオンにしてください。",
       "quality": "画質",
       "qualityLossless": "画質 (ロスレス)",
       "resolution": "解像度",
@@ -1355,12 +1369,12 @@
           "gte": "この評価以上",
           "lte": "この評価以下"
         },
-        "groupEditedFiles": "Include edited files in groups",
-        "groupIgnoreMetadata": "Ignore mismatched EXIF dates",
-        "groupOff": "Off",
-        "groupPreferJpeg": "Prefer JPEG",
-        "groupPreferRaw": "Prefer RAW",
-        "groupRawJpeg": "Group RAW + JPEG",
+        "groupEditedFiles": "編集済みファイルもグループに含める",
+        "groupIgnoreMetadata": "一致しない EXIF 日付を無視",
+        "groupOff": "オフ",
+        "groupPreferJpeg": "JPEG を優先",
+        "groupPreferRaw": "RAW を優先",
+        "groupRawJpeg": "RAW + JPEG をグループ化",
         "metadataAlways": "常に表示",
         "metadataHover": "ホバー時に表示",
         "metadataOff": "オフ",
@@ -1470,10 +1484,7 @@
       "originalRatio": "オリジナル比率"
     },
     "thumbnailSize": {
-      "large": "大",
-      "list": "リスト",
-      "medium": "中",
-      "small": "小"
+      "list": "リスト"
     },
     "tooltips": {
       "communityPresets": "コミュニティプリセット",
@@ -1648,38 +1659,27 @@
       "title": "画像を選別"
     },
     "focusStack": {
-      "cancel": "キャンセル",
-      "close": "閉じる",
       "depthMap": "深度マップ",
       "description": "ピント位置の異なる複数の画像を結合し、全体にピントが合った1枚の画像を作成します。",
       "descriptionWithCount_one": "ピント位置の異なる {{count}} 枚の画像を結合し、全体にピントが合った1枚の画像を作成します。",
       "descriptionWithCount_other": "ピント位置の異なる {{count}} 枚の画像を結合し、全体にピントが合った1枚の画像を作成します。",
       "failed": "フォーカススタッキングに失敗しました",
-      "initializing": "初期化中...",
-      "openInEditor": "エディターで開く",
-      "result": "結果",
-      "save": "保存",
+      "method": "方式",
+      "methodDetail": "ディテール",
+      "methodHint": "ディテールは毛や剛毛などの細かな構造を保持します。スムーズは移行がなめらかでノイズが少なくなります。",
+      "methodSmooth": "スムーズ",
+      "processing": "フォーカスをスタック中",
       "savedSuccess": "フォーカススタックを正常に保存しました！",
-      "stacking": "フォーカスをスタック中",
-      "start": "開始",
       "title": "フォーカススタッキング"
     },
     "hdr": {
-      "cancel": "キャンセル",
-      "close": "閉じる",
       "description": "ブラケット露出を1枚のHDR（ハイダイナミックレンジ）画像に統合します。",
       "descriptionWithCount": "{{count}} 枚のブラケット露出を1枚のHDR画像に統合します。",
       "descriptionWithCount_one": "{{count}} 枚のブラケット露出を1枚のHDR画像に統合します。",
       "descriptionWithCount_other": "{{count}} 枚のブラケット露出を1枚のHDR画像に統合します。",
       "failed": "HDR統合に失敗しました",
-      "initializing": "初期化中...",
-      "merging": "HDR統合中",
-      "openInEditor": "エディタで開く",
-      "retry": "再試行",
-      "save": "保存",
+      "processing": "HDR統合中",
       "savedSuccess": "HDRを正常に保存しました！",
-      "speedNotice": "露出数や画像サイズによって、数分かかる場合があります。",
-      "start": "開始",
       "title": "HDRに統合"
     },
     "importSettings": {
@@ -1728,22 +1728,45 @@
       "zoomInTooltip": "拡大",
       "zoomOutTooltip": "縮小"
     },
-    "panorama": {
+    "merge": {
+      "autoCrop": "自動切り抜き",
+      "autoCropHint": "すべての画像でカバーされていない端を切り取ります。",
       "cancel": "キャンセル",
       "close": "閉じる",
-      "descCount": "{{count}} 枚の重複する画像をシームレスなパノラマに結合します。",
-      "descCount_one": "{{count}} 枚の重複する画像をシームレスなパノラマに結合します。",
-      "descCount_other": "{{count}} 枚の重複する画像をシームレスなパノラマに結合します。",
-      "descGeneric": "重複する画像をシームレスなパノラマに結合します。",
-      "failed": "パノラマ作成に失敗しました",
+      "excludedImages": "{{count}} 枚の画像は一致しなかったため除外されました",
+      "excludedImages_one": "{{count}} 枚の画像は一致しなかったため除外されました",
+      "excludedImages_other": "{{count}} 枚の画像は一致しなかったため除外されました",
       "initializing": "初期化中...",
       "openInEditor": "エディタで開く",
+      "outputInfo": "{{images}} 枚 · {{width}} × {{height}} px",
+      "result": "結果",
       "retry": "再試行",
       "save": "保存",
-      "savedSuccess": "パノラマを正常に保存しました！",
+      "saving": "保存中…",
       "speedNotice": "画像枚数や画像サイズによって、数分かかる場合があります。",
       "start": "開始",
-      "stitchingProgress": "パノラマ写真を作成中",
+      "unalignedImages_one": "{{count}} 枚の画像を位置合わせできませんでした",
+      "unalignedImages_other": "{{count}} 枚の画像を位置合わせできませんでした"
+    },
+    "panorama": {
+      "autoProjectionUsed": "使用中: {{projection}}",
+      "boundaryWarp": "境界のワープ",
+      "boundaryWarpHint": "端を切り抜く代わりに引き伸ばしてフレームを埋めます。",
+      "description": "重複する画像をシームレスなパノラマに結合します。",
+      "descriptionWithCount": "{{count}} 枚の重複する画像をシームレスなパノラマに結合します。",
+      "descriptionWithCount_one": "{{count}} 枚の重複する画像をシームレスなパノラマに結合します。",
+      "descriptionWithCount_other": "{{count}} 枚の重複する画像をシームレスなパノラマに結合します。",
+      "exposureCompensation": "露出補正",
+      "exposureCompensationHint": "画像間の露出、ホワイトバランス、周辺減光を揃えます。",
+      "failed": "パノラマ作成に失敗しました",
+      "processing": "パノラマ写真を作成中",
+      "projection": "投影法",
+      "projectionAuto": "自動",
+      "projectionCylindrical": "円筒",
+      "projectionFallback": "{{requested}} ではこの画角をカバーできないため、{{projection}} を使用しています",
+      "projectionPerspective": "遠近法",
+      "projectionSpherical": "球面",
+      "savedSuccess": "パノラマを正常に保存しました！",
       "title": "パノラマ写真を作成"
     },
     "renameAlbum": {
@@ -2126,12 +2149,34 @@
       "alwaysDecodeRawLabel": "サムネイル用に常にRAWをデコード",
       "backend": "処理バックエンド",
       "backendDesc": "グラフィックスAPIを選択します。「自動」を推奨します。一部のシステムでのクラッシュを回避できる場合があります。",
+      "backendFallback": "{{failed}} がこの GPU での起動中にクラッシュしたため、当面は {{using}} を使用します。",
+      "backendFallbackRetry": "{{failed}} を再試行",
+      "backendFallbackRetryPending": "次回の起動時に {{failed}} を再試行します。",
       "backends": {
         "auto": "自動",
         "dx12": "DirectX 12",
         "gl": "OpenGL",
         "metal": "Metal",
         "vulkan": "Vulkan"
+      },
+      "colorManagement": {
+        "chooseProfile": "プロファイルを選択",
+        "modeAuto": "自動（システムのプロファイル）",
+        "modeCustom": "カスタム ICC プロファイル",
+        "modeOff": "オフ",
+        "previewGamut": "プレビューの色域",
+        "previewGamutDesc": "書き出しに使う色空間に合わせてください。sRGB では sRGB や Web 向け書き出しの見え方を表示します。広色域では、Display P3 や Adobe RGB での書き出しのように、モニターが表示できる sRGB 外の色も表示します。",
+        "previewGamutSrgb": "sRGB",
+        "previewGamutWide": "広色域",
+        "previewGamutWideSpace": "広色域（{{space}}）",
+        "profile": "モニタープロファイル",
+        "profileDesc": "エディターのプレビューをモニターのカラープロファイルに変換し、キャリブレーション済みや広色域のディスプレイで正確な色を表示します。書き出しには影響しません。",
+        "statusInvalid": "このプロファイルを読み込めませんでした。",
+        "statusNone": "モニタープロファイルが見つかりません。プレビューは sRGB として表示されます。",
+        "statusProfile": "{{name}} を使用中です。",
+        "statusSystem": "色は OS によって管理されています。",
+        "statusUnavailable": "カラーマネジメントには WGPUダイレクトレンダリング が必要です。",
+        "wideGamut": "広色域プレビュー（{{space}}）。"
       },
       "defaultAdjustments": {
         "addCamera": "カメラを追加…",
@@ -2158,6 +2203,9 @@
         "sliderResetNeutral": "ニュートラル値",
         "title": "デフォルトの補正"
       },
+      "display": {
+        "title": "ディスプレイ"
+      },
       "dynamicDesc": "編集画面は、ディスプレイの実際の画素密度に合わせたプレビューをレンダリングします。これにより、ズーム時やピント合わせ時に1:1のピクセル精度で細部まで鮮明に表現されます。",
       "editIn": {
         "add": "プログラムを追加",
@@ -2175,6 +2223,21 @@
         "title": "外部アプリで編集"
       },
       "enableLivePreviews": "リアルタイムプレビューを有効化",
+      "hdr": {
+        "display": "HDR表示",
+        "displayDesc": "HDRディスプレイでハイライトを通常の白より明るく表示します。シャドウと中間調は変わらず、通常の書き出しには影響しません。",
+        "enableDisplay": "エディターでHDRを使用",
+        "gainMaps": "HDR 写真",
+        "gainMapsAlways": "常に HDR で開く",
+        "gainMapsAuto": "自動",
+        "gainMapsDesc": "最近のスマートフォンなどで撮影された HDR ゲインマップ付きの写真は、明るい HDR ハイライトのまま開くことも、通常の SDR 版として開くこともできます。「自動」では、エディターで HDR を使用している間は HDR として開きます。この設定は、これらの写真の書き出しにも適用されます。",
+        "gainMapsNever": "常に SDR で開く",
+        "headroom": "ハイライトの範囲",
+        "headroomDesc": "ハイライトが通常の白をどこまで超えられるかを設定します。HDR書き出しにも使用されます。",
+        "statusActive": "このディスプレイはHDRモードです。",
+        "statusInactive": "このディスプレイはHDRモードではありません。効果を確認するには、システムのディスプレイ設定でHDRをオンにしてください。",
+        "statusUnsupported": "HDRには WGPUダイレクトレンダリング が必要です。LinuxではHDR対応のWaylandセッションも必要です。"
+      },
       "highDpi": "高DPIレンダリング",
       "highDpiDesc": "画面本来の物理解像度である {{dpr}}x でプレビューをレンダリングします。極めて鮮明なプレビューが得られますが、メモリ消費が大幅に増加します。",
       "highDpiDescStandard": "この設定は高DPIディスプレイのみに影響します。現在のディスプレイは標準解像度です。",
@@ -2203,7 +2266,7 @@
         "baselineExposure": "ベース露出",
         "baselineExposureAmount": "ベース量",
         "baselineExposureAmountDesc": "RAWファイルに加える露出量です。darktableは+0.7 EVを使用します。",
-        "baselineExposureDesc": "RAWファイルを一定量明るくします。DNGのBaselineExposureタグがあればその値も加えます。",
+        "baselineExposureDesc": "RAWファイルを一定量明るくします。DNGのBaselineExposureタグがある場合は、代わりにその値を使います。",
         "colorNr": "カラーノイズ低減 (基本)",
         "colorNrDesc": "パイプラインの初期段階でクロスバイラテラルフィルタを適用し、カラーノイズを除去します。値が大きいほど効果が強まります。",
         "defaultNonRawTonemapper": "標準トーンマッパー (RAW以外)",
@@ -2243,6 +2306,15 @@
       "qualities": {
         "high": "高画質",
         "performance": "パフォーマンス優先"
+      },
+      "rawDecoding": "RAWデコード",
+      "rawDecodingDesc": "RAWファイルをデコードする場所を選択します。「自動」はGPUを使用し、GPUで画像を処理できない場合はCPUに切り替えます。「GPU」は常に最初にGPUを試します。「CPU」は低速ですが、すべてのシステムで動作します。",
+      "rawDecodingFallback": "大きな RAW ファイルで GPU が失敗したため、{{megapixels}} MP 以上のファイルは当面 CPU で現像されます。",
+      "rawDecodingFallbackRetry": "GPU を再試行",
+      "rawDecodingOptions": {
+        "auto": "自動",
+        "cpu": "CPU",
+        "gpu": "GPU"
       },
       "renderScale": "レンダリングスケール",
       "renderScaleDesc": "画面解像度に対する表示解像度の比率を調整します。高解像度ディスプレイで値を下げると、シャープネスがわずかに低下する代わりに動作が軽くなります。",
@@ -2376,13 +2448,11 @@
     "bottomBar": {
       "imagesSelected": "{{total}}枚中 {{current}}枚の画像を選択中",
       "tooltips": {
-        "collapseFilmstrip": "フィルムストリップをたたむ",
         "collapseLeft": "左パネルを折りたたむ",
         "collapseRight": "右パネルを折りたたむ",
         "copyPasteSettings": "補正設定のコピーと貼り付け",
         "copySettings": "補正設定をコピー",
         "customZoom": "クリックしてカスタムのズーム倍率を入力",
-        "expandFilmstrip": "フィルムストリップを展開",
         "expandLeft": "左パネルを展開",
         "expandRight": "右パネルを展開",
         "export": "書き出し",

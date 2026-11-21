@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useReducer, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useReducer, useState } from 'react';
 import {
   ArrowLeft,
   Cloud,
@@ -55,8 +55,10 @@ import { DEFAULT_SPEED_EDIT_ADJUSTMENTS, SPEED_EDIT_ADJUSTMENTS } from '../../ut
 import Text from '../ui/Text';
 import { TextColors, TextVariants, TextWeights } from '../../types/typography';
 import { useOsPlatform } from '../../hooks/useOsPlatform';
+import { DEFAULT_HDR_HEADROOM, useDisplayStatus } from '../../hooks/useDisplayStatus';
 import { useCloudUsage } from '../../hooks/useCloudUsage';
 import { open } from '@tauri-apps/plugin-shell';
+import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import ImmichSettings from '../immich/ImmichSettings';
 import DataManagementSettings from './settings/DataManagementSettings';
 import DefaultAdjustmentsSettings from './settings/DefaultAdjustmentsSettings';
@@ -87,6 +89,13 @@ interface SettingItemProps {
   children: any;
   description?: string;
   label: string;
+  status?: string | null;
+  statusAction?: { label: string; onClick(): void } | null;
+}
+
+interface GpuFallbacks {
+  backend: { failed: string; using: string; retryPending: boolean } | null;
+  rawDecodingMegapixels: number | null;
 }
 
 interface SettingsPanelProps {
@@ -108,8 +117,22 @@ interface MyLens {
   model: string;
 }
 
+const BACKEND_NAME_KEYS = {
+  auto: 'settings.processing.backends.auto',
+  vulkan: 'settings.processing.backends.vulkan',
+  dx12: 'settings.processing.backends.dx12',
+  metal: 'settings.processing.backends.metal',
+  gl: 'settings.processing.backends.gl',
+} as const;
+
 const EXECUTE_TIMEOUT = 3000;
 const DEFAULT_BASELINE_EXPOSURE = 0.7;
+const DISPLAY_STATUS_INTERVAL = 3000;
+const PREVIEW_SPACE_NAMES: Record<string, string> = {
+  displayP3: 'Display P3',
+  adobeRgb: 'Adobe RGB',
+  rec2020: 'Rec. 2020',
+};
 
 const resolutions: OptionItem<number>[] = [
   { value: 720, label: '720px' },
@@ -220,7 +243,7 @@ const KeybindRow = ({
   );
 };
 
-const SettingItem = ({ children, description, label }: SettingItemProps) => (
+const SettingItem = ({ children, description, label, status, statusAction }: SettingItemProps) => (
   <div>
     <Text variant={TextVariants.heading} className="block mb-2">
       {label}
@@ -229,6 +252,19 @@ const SettingItem = ({ children, description, label }: SettingItemProps) => (
     {description && (
       <Text variant={TextVariants.small} className="mt-2">
         {description}
+      </Text>
+    )}
+    {status && (
+      <Text variant={TextVariants.small} className="mt-1">
+        {status}
+        {statusAction && (
+          <>
+            {' '}
+            <button className="text-accent hover:underline focus:outline-none" onClick={statusAction.onClick}>
+              {statusAction.label}
+            </button>
+          </>
+        )}
       </Text>
     )}
   </div>
@@ -679,12 +715,82 @@ export default function SettingsPanel({
       .then(setIsWgpuSupported)
       .catch(() => setIsWgpuSupported(false));
   }, []);
+  const displayStatus = useDisplayStatus(DISPLAY_STATUS_INTERVAL);
+  const [gpuFallbacks, setGpuFallbacks] = useState<GpuFallbacks | null>(null);
+  const refreshGpuFallbacks = useCallback(() => {
+    invoke<GpuFallbacks>('get_gpu_fallbacks').then(setGpuFallbacks).catch(console.error);
+  }, []);
+  useEffect(() => {
+    refreshGpuFallbacks();
+  }, [refreshGpuFallbacks]);
+  const resetGpuFallback = async (kind: 'backend' | 'rawDecoding') => {
+    await invoke('reset_gpu_fallback', { kind });
+    refreshGpuFallbacks();
+  };
+  const backendName = (backend: string) =>
+    t(BACKEND_NAME_KEYS[backend as keyof typeof BACKEND_NAME_KEYS] ?? BACKEND_NAME_KEYS.auto);
+  const backendFallback = gpuFallbacks?.backend;
+  const rawDecodingMegapixels = gpuFallbacks?.rawDecodingMegapixels;
+  const displayColorMode = appSettings?.displayColorMode ?? 'auto';
+  const displayColorOptions = useMemo<OptionItem<string>[]>(
+    () => [
+      { value: 'auto', label: t('settings.processing.colorManagement.modeAuto') },
+      { value: 'custom', label: t('settings.processing.colorManagement.modeCustom') },
+      { value: 'off', label: t('settings.processing.colorManagement.modeOff') },
+    ],
+    [t],
+  );
+  const gainMapOptions = useMemo<OptionItem<string>[]>(
+    () => [
+      { value: 'auto', label: t('settings.processing.hdr.gainMapsAuto') },
+      { value: 'always', label: t('settings.processing.hdr.gainMapsAlways') },
+      { value: 'never', label: t('settings.processing.hdr.gainMapsNever') },
+    ],
+    [t],
+  );
+  const previewGamutOptions = useMemo<OptionItem<string>[]>(() => {
+    const space = displayStatus && PREVIEW_SPACE_NAMES[displayStatus.previewSpace];
+    return [
+      { value: 'srgb', label: t('settings.processing.colorManagement.previewGamutSrgb') },
+      {
+        value: 'wide',
+        label: space
+          ? t('settings.processing.colorManagement.previewGamutWideSpace', { space })
+          : t('settings.processing.colorManagement.previewGamutWide'),
+      },
+    ];
+  }, [displayStatus, t]);
+  const displayColorStatus = useMemo(() => {
+    if (!displayStatus || displayColorMode === 'off') return null;
+    if (!displayStatus.rendererActive) return t('settings.processing.colorManagement.statusUnavailable');
+    const space = PREVIEW_SPACE_NAMES[displayStatus.previewSpace];
+    const wideGamut = space ? ` ${t('settings.processing.colorManagement.wideGamut', { space })}` : '';
+    switch (displayStatus.colorManagement) {
+      case 'profile':
+        return t('settings.processing.colorManagement.statusProfile', { name: displayStatus.profileName }) + wideGamut;
+      case 'system':
+        return t('settings.processing.colorManagement.statusSystem') + wideGamut;
+      default:
+        if (displayColorMode === 'auto') return t('settings.processing.colorManagement.statusNone');
+        return appSettings?.displayIccProfile ? t('settings.processing.colorManagement.statusInvalid') : null;
+    }
+  }, [displayStatus, displayColorMode, appSettings?.displayIccProfile, t]);
+  const pickDisplayProfile = async () => {
+    const selected = await openDialog({
+      multiple: false,
+      filters: [{ name: t('settings.processing.colorManagement.modeCustom'), extensions: ['icc', 'icm'] }],
+    });
+    if (typeof selected === 'string') {
+      onSettingsChange({ ...appSettings, displayIccProfile: selected });
+    }
+  };
   const [processingSettings, setProcessingSettings] = useState({
     editorPreviewResolution: appSettings?.editorPreviewResolution || 1920,
     smallThumbnailResolution: appSettings?.smallThumbnailResolution || 480,
     mediumThumbnailResolution: appSettings?.mediumThumbnailResolution || 1280,
     rawHighlightCompression: appSettings?.rawHighlightCompression ?? 2.5,
     baselineExposure: appSettings?.baselineExposure ?? DEFAULT_BASELINE_EXPOSURE,
+    hdrHeadroom: appSettings?.hdrHeadroom ?? DEFAULT_HDR_HEADROOM,
     processingBackend: appSettings?.processingBackend || 'auto',
     linuxGpuOptimization: appSettings?.linuxGpuOptimization ?? false,
     highResZoomMultiplier: appSettings?.highResZoomMultiplier || 1.0,
@@ -735,12 +841,23 @@ export default function SettingsPanel({
       { value: 'metal', label: t('settings.processing.backends.metal') },
       { value: 'gl', label: t('settings.processing.backends.gl') },
     ];
-    return rawOptions.filter((opt) => {
-      if (opt.value === 'metal' && osPlatform !== 'macos') return false;
-      if (opt.value === 'dx12' && osPlatform === 'macos') return false;
-      return true;
-    });
+    const available =
+      osPlatform === 'macos'
+        ? ['auto', 'metal']
+        : osPlatform === 'windows'
+          ? ['auto', 'dx12', 'vulkan', 'gl']
+          : ['auto', 'vulkan', 'gl'];
+    return rawOptions.filter((opt) => available.includes(opt.value));
   }, [t, osPlatform]);
+
+  const rawDecodingOptions = useMemo<OptionItem<string>[]>(
+    () => [
+      { value: 'auto', label: t('settings.processing.rawDecodingOptions.auto') },
+      { value: 'gpu', label: t('settings.processing.rawDecodingOptions.gpu') },
+      { value: 'cpu', label: t('settings.processing.rawDecodingOptions.cpu') },
+    ],
+    [t],
+  );
 
   const linearRawOptions = useMemo<OptionItem<string>[]>(
     () => [
@@ -813,6 +930,7 @@ export default function SettingsPanel({
       mediumThumbnailResolution: appSettings?.mediumThumbnailResolution || 1280,
       rawHighlightCompression: appSettings?.rawHighlightCompression ?? 2.5,
       baselineExposure: appSettings?.baselineExposure ?? DEFAULT_BASELINE_EXPOSURE,
+      hdrHeadroom: appSettings?.hdrHeadroom ?? DEFAULT_HDR_HEADROOM,
       processingBackend: appSettings?.processingBackend || 'auto',
       linuxGpuOptimization: appSettings?.linuxGpuOptimization ?? false,
       highResZoomMultiplier: appSettings?.highResZoomMultiplier || 1.0,
@@ -1113,6 +1231,7 @@ export default function SettingsPanel({
                             { value: 'nl', label: 'Nederlands' },
                             { value: 'pl', label: 'Polski' },
                             { value: 'pt', label: 'Português' },
+                            { value: 'sv', label: 'Svenska' },
                             { value: 'ru', label: 'Русский' },
                             { value: 'uk', label: 'Українська' },
                             { value: 'ja', label: '日本語' },
@@ -2003,6 +2122,27 @@ export default function SettingsPanel({
                       <SettingItem
                         label={t('settings.processing.backend')}
                         description={t('settings.processing.backendDesc')}
+                        status={
+                          backendFallback &&
+                          (backendFallback.retryPending
+                            ? t('settings.processing.backendFallbackRetryPending', {
+                                failed: backendName(backendFallback.failed),
+                              })
+                            : t('settings.processing.backendFallback', {
+                                failed: backendName(backendFallback.failed),
+                                using: backendName(backendFallback.using),
+                              }))
+                        }
+                        statusAction={
+                          backendFallback && !backendFallback.retryPending
+                            ? {
+                                label: t('settings.processing.backendFallbackRetry', {
+                                  failed: backendName(backendFallback.failed),
+                                }),
+                                onClick: () => resetGpuFallback('backend'),
+                              }
+                            : null
+                        }
                       >
                         <Dropdown
                           onChange={(value: any) => handleProcessingSettingChange('processingBackend', value)}
@@ -2014,6 +2154,33 @@ export default function SettingsPanel({
                               ? processingSettings.processingBackend
                               : 'auto'
                           }
+                          triggerClassName="bg-bg-primary"
+                        />
+                      </SettingItem>
+
+                      <SettingItem
+                        label={t('settings.processing.rawDecoding')}
+                        description={t('settings.processing.rawDecodingDesc')}
+                        status={
+                          rawDecodingMegapixels
+                            ? t('settings.processing.rawDecodingFallback', {
+                                megapixels: Math.round(rawDecodingMegapixels),
+                              })
+                            : null
+                        }
+                        statusAction={
+                          rawDecodingMegapixels
+                            ? {
+                                label: t('settings.processing.rawDecodingFallbackRetry'),
+                                onClick: () => resetGpuFallback('rawDecoding'),
+                              }
+                            : null
+                        }
+                      >
+                        <Dropdown
+                          onChange={(value: string) => onSettingsChange({ ...appSettings, rawDecoding: value })}
+                          options={rawDecodingOptions}
+                          value={appSettings?.rawDecoding ?? 'auto'}
                           triggerClassName="bg-bg-primary"
                         />
                       </SettingItem>
@@ -2151,6 +2318,109 @@ export default function SettingsPanel({
                           </div>
                         </>
                       )}
+                    </div>
+                  </div>
+
+                  <div className="p-6 bg-surface rounded-xl shadow-md">
+                    <Text variant={TextVariants.title} color={TextColors.accent} className="mb-5">
+                      {t('settings.processing.display.title')}
+                    </Text>
+                    <div className="space-y-4">
+                      <SettingItem
+                        label={t('settings.processing.colorManagement.profile')}
+                        description={t('settings.processing.colorManagement.profileDesc')}
+                        status={displayColorStatus}
+                      >
+                        <Dropdown
+                          onChange={(value: any) => onSettingsChange({ ...appSettings, displayColorMode: value })}
+                          options={displayColorOptions}
+                          value={displayColorMode}
+                          triggerClassName="bg-bg-primary"
+                        />
+                        {displayColorMode === 'custom' && (
+                          <div className="mt-3 flex items-center gap-3">
+                            <Button onClick={pickDisplayProfile}>
+                              {t('settings.processing.colorManagement.chooseProfile')}
+                            </Button>
+                            {appSettings?.displayIccProfile && (
+                              <Text variant={TextVariants.small} className="truncate">
+                                {appSettings.displayIccProfile.split(/[\\/]/).pop()}
+                              </Text>
+                            )}
+                          </div>
+                        )}
+                      </SettingItem>
+                      {displayColorMode !== 'off' && (
+                        <SettingItem
+                          label={t('settings.processing.colorManagement.previewGamut')}
+                          description={t('settings.processing.colorManagement.previewGamutDesc')}
+                        >
+                          <Dropdown
+                            onChange={(value: string) =>
+                              onSettingsChange({ ...appSettings, wideGamutPreview: value === 'wide' })
+                            }
+                            options={previewGamutOptions}
+                            value={appSettings?.wideGamutPreview ? 'wide' : 'srgb'}
+                            triggerClassName="bg-bg-primary"
+                          />
+                        </SettingItem>
+                      )}
+
+                      <SettingItem
+                        label={t('settings.processing.hdr.display')}
+                        description={t('settings.processing.hdr.displayDesc')}
+                        status={
+                          displayStatus &&
+                          (!displayStatus.hdrSupported
+                            ? t('settings.processing.hdr.statusUnsupported')
+                            : displayStatus.hdrActive
+                              ? t('settings.processing.hdr.statusActive')
+                              : t('settings.processing.hdr.statusInactive'))
+                        }
+                      >
+                        <Switch
+                          checked={appSettings?.hdrDisplay ?? false}
+                          disabled={displayStatus?.hdrSupported === false && !appSettings?.hdrDisplay}
+                          id="hdr-display-toggle"
+                          label={t('settings.processing.hdr.enableDisplay')}
+                          onChange={(checked) => onSettingsChange({ ...appSettings, hdrDisplay: checked })}
+                        />
+                      </SettingItem>
+
+                      <SettingItem
+                        label={t('settings.processing.hdr.gainMaps')}
+                        description={t('settings.processing.hdr.gainMapsDesc')}
+                      >
+                        <Dropdown
+                          onChange={async (value: string) => {
+                            await onSettingsChange({
+                              ...appSettings,
+                              gainMapMode: value as 'auto' | 'always' | 'never',
+                            });
+                            await invoke('clear_image_caches');
+                          }}
+                          options={gainMapOptions}
+                          value={appSettings?.gainMapMode ?? 'auto'}
+                          triggerClassName="bg-bg-primary"
+                        />
+                      </SettingItem>
+
+                      <SettingItem
+                        label={t('settings.processing.hdr.headroom')}
+                        description={t('settings.processing.hdr.headroomDesc')}
+                      >
+                        <Slider
+                          label={t('settings.tagging.amount')}
+                          min={1}
+                          max={4}
+                          step={0.1}
+                          value={processingSettings.hdrHeadroom}
+                          defaultValue={DEFAULT_HDR_HEADROOM}
+                          onChange={(e) => handleProcessingSettingChange('hdrHeadroom', Number(e.target.value))}
+                          fillOrigin="min"
+                          suffix=" EV"
+                        />
+                      </SettingItem>
                     </div>
                   </div>
 

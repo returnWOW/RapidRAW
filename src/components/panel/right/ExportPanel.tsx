@@ -22,9 +22,12 @@ import {
   ExportState,
   FileFormats,
   MAX_EXPORT_DPI,
-  OutputColorSpace,
   TiffBitDepth,
   WatermarkAnchor,
+  COLOR_SPACE_FILE_FORMATS,
+  HDR_FILE_FORMATS,
+  EXPORT_COLOR_SPACES,
+  ExportColorSpace,
 } from '../../../types/export';
 import { Invokes } from '../../../types/invokes';
 import { SelectedImage } from '../../../types/editor';
@@ -33,6 +36,7 @@ import { Panel } from '../../../types/ui';
 import ExportPresetsList from './ExportPresetsList';
 import { useExportSettings } from '../../../hooks/useExportSettings';
 import { useOsPlatform } from '../../../hooks/useOsPlatform';
+import { useDisplayStatus } from '../../../hooks/useDisplayStatus';
 import Text from '../../ui/Text';
 import { TextColors, TextVariants, TextWeights } from '../../../types/typography';
 import { useEditorStore } from '../../../store/useEditorStore';
@@ -256,15 +260,6 @@ export default function ExportPanel({
     [t],
   );
 
-  const outputColorSpaceOptions = useMemo(
-    () => [
-      { label: t('export.file.colorSpaces.srgb'), value: OutputColorSpace.Srgb },
-      { label: t('export.file.colorSpaces.displayP3'), value: OutputColorSpace.DisplayP3 },
-      { label: t('export.file.colorSpaces.adobeRgb'), value: OutputColorSpace.AdobeRgb },
-    ],
-    [t],
-  );
-
   const {
     fileFormat,
     setFileFormat,
@@ -272,8 +267,10 @@ export default function ExportPanel({
     setJpegQuality,
     tiffBitDepth,
     setTiffBitDepth,
-    outputColorSpace,
-    setOutputColorSpace,
+    colorSpace,
+    setColorSpace,
+    hdr,
+    setHdr,
     dpi,
     setDpi,
     enableResize,
@@ -339,14 +336,6 @@ export default function ExportPanel({
     subfolder,
     setSubfolder,
   } = useExportSettings();
-
-  useEffect(() => {
-    const supportsColorSpace =
-      fileFormat === FileFormats.Jpeg || fileFormat === FileFormats.Png || fileFormat === FileFormats.Tiff;
-    if (!supportsColorSpace && outputColorSpace !== OutputColorSpace.Srgb) {
-      setOutputColorSpace(OutputColorSpace.Srgb);
-    }
-  }, [fileFormat, outputColorSpace, setOutputColorSpace]);
 
   const adjustmentsRef = useRef(useEditorStore.getState().adjustments);
 
@@ -418,6 +407,14 @@ export default function ExportPanel({
   const [imageAspectRatio, setImageAspectRatio] = useState(16 / 9);
   const filenameInputRef = useRef<HTMLInputElement>(null);
   const osPlatform = useOsPlatform();
+  const displayStatus = useDisplayStatus();
+  const hdrPreviewHint = !displayStatus
+    ? null
+    : !displayStatus.hdrActive
+      ? t('export.file.hdrNoPreview')
+      : !appSettings?.hdrDisplay
+        ? t('export.file.hdrPreviewOff')
+        : null;
   const isAndroid = osPlatform === 'android';
   const canExportToImmich = useImmichExportAvailable() && !isAndroid;
   const destination = destinationType === 'immich' && !canExportToImmich ? 'customFolder' : destinationType;
@@ -528,7 +525,8 @@ export default function ExportPanel({
       filenameTemplate,
       jpegQuality,
       tiffBitDepth,
-      outputColorSpace,
+      colorSpace,
+      hdr,
       keepMetadata,
       preserveTimestamps,
       preserveFolders,
@@ -583,7 +581,8 @@ export default function ExportPanel({
     fileFormat,
     jpegQuality,
     tiffBitDepth,
-    outputColorSpace,
+    colorSpace,
+    hdr,
     enableResize,
     resizeMode,
     resizeValue,
@@ -634,7 +633,8 @@ export default function ExportPanel({
       filenameTemplate,
       jpegQuality,
       tiffBitDepth,
-      outputColorSpace,
+      colorSpace,
+      hdr,
       keepMetadata,
       preserveTimestamps,
       preserveFolders,
@@ -676,9 +676,10 @@ export default function ExportPanel({
       } else if (isOriginalFolder) {
         outputFolderOrFile = 'originalFolderDummy';
       } else if (shouldChooseOutputFile) {
-        const originalFilename = pathsToExport[0].split(/[\\/]/).pop() || '';
-        const stem = originalFilename.substring(0, originalFilename.lastIndexOf('.')) || originalFilename;
-        const suggestedName = (filenameTemplate || '').replace('{original_filename}', stem);
+        const suggestedName = await invoke<string>(Invokes.ResolveExportFileStem, {
+          path: pathsToExport[0],
+          filenameTemplate,
+        });
         const outputFileName = `${suggestedName}.${selectedFormat.extensions[0]}`;
 
         outputFolderOrFile = isAndroid
@@ -721,6 +722,7 @@ export default function ExportPanel({
 
         setExportState({
           destination: isOriginalFolder || isImmich || isAndroid ? null : outputFolderOrFile,
+          isOriginalFolder,
           errorMessage: '',
           progress: { current: 0, total: numImages },
           status: Status.Exporting,
@@ -801,7 +803,7 @@ export default function ExportPanel({
                   <Slider
                     defaultValue={90}
                     label={
-                      fileFormat === FileFormats.Jxl && jpegQuality === 100
+                      fileFormat === FileFormats.Jxl && jpegQuality === 100 && !hdr
                         ? t('export.file.qualityLossless')
                         : t('export.file.quality')
                     }
@@ -811,20 +813,6 @@ export default function ExportPanel({
                     step={1}
                     value={jpegQuality}
                     fillOrigin="min"
-                  />
-                </div>
-              )}
-              {[FileFormats.Jpeg, FileFormats.Png, FileFormats.Tiff].includes(fileFormat as FileFormats) && (
-                <div className={isExporting ? 'opacity-50 pointer-events-none' : ''}>
-                  <Text variant={TextVariants.label} className="mb-1">
-                    {t('export.file.outputColorSpace')}
-                  </Text>
-                  <Dropdown
-                    options={outputColorSpaceOptions}
-                    value={outputColorSpace}
-                    onChange={(value) => setOutputColorSpace(value as OutputColorSpace)}
-                    disabled={isExporting}
-                    className="w-full"
                   />
                 </div>
               )}
@@ -878,30 +866,28 @@ export default function ExportPanel({
               </div>
             </Section>
 
-            {numImages > 1 && (
-              <Section title={t('export.sections.fileNaming')}>
-                <input
-                  className="w-full bg-surface border border-surface rounded-md p-2 text-sm text-text-primary focus:ring-accent focus:border-accent"
-                  disabled={isExporting}
-                  onChange={(e) => setFilenameTemplate(e.target.value)}
-                  ref={filenameInputRef}
-                  type="text"
-                  value={filenameTemplate}
-                />
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {FILENAME_VARIABLES.map((variable: string) => (
-                    <button
-                      className="px-2 py-1 bg-surface text-text-secondary text-xs rounded-md hover:bg-card-active transition-colors disabled:opacity-50"
-                      disabled={isExporting}
-                      key={variable}
-                      onClick={() => handleVariableClick(variable)}
-                    >
-                      {variable}
-                    </button>
-                  ))}
-                </div>
-              </Section>
-            )}
+            <Section title={t('export.sections.fileNaming')}>
+              <input
+                className="w-full bg-surface border border-surface rounded-md p-2 text-sm text-text-primary focus:ring-accent focus:border-accent"
+                disabled={isExporting}
+                onChange={(e) => setFilenameTemplate(e.target.value)}
+                ref={filenameInputRef}
+                type="text"
+                value={filenameTemplate}
+              />
+              <div className="flex flex-wrap gap-2 mt-2">
+                {FILENAME_VARIABLES.map((variable: string) => (
+                  <button
+                    className="px-2 py-1 bg-surface text-text-secondary text-xs rounded-md hover:bg-card-active transition-colors disabled:opacity-50"
+                    disabled={isExporting}
+                    key={variable}
+                    onClick={() => handleVariableClick(variable)}
+                  >
+                    {variable}
+                  </button>
+                ))}
+              </div>
+            </Section>
 
             {fileFormat !== FileFormats.Cube && (
               <>
@@ -1042,7 +1028,9 @@ export default function ExportPanel({
                   )}
                 </Section>
 
-                {[FileFormats.Jpeg, FileFormats.Png, FileFormats.Webp].includes(fileFormat as FileFormats) && (
+                {[FileFormats.Jpeg, FileFormats.Png, FileFormats.Tiff, FileFormats.Webp, FileFormats.Jxl].includes(
+                  fileFormat as FileFormats,
+                ) && (
                   <Section title={t('export.sections.metadata')}>
                     <Switch
                       checked={keepMetadata}
@@ -1220,6 +1208,34 @@ export default function ExportPanel({
                               </>
                             )}
                           </>
+                        )}
+                        {HDR_FILE_FORMATS.includes(fileFormat) && (
+                          <Switch
+                            label={t('export.file.hdr')}
+                            tooltip={t(
+                              fileFormat === FileFormats.Jpeg ? 'export.file.hdrJpegHint' : 'export.file.hdrJxlHint',
+                            )}
+                            checked={hdr}
+                            onChange={setHdr}
+                            disabled={isExporting}
+                          />
+                        )}
+                        {HDR_FILE_FORMATS.includes(fileFormat) && hdr && hdrPreviewHint && (
+                          <Text variant={TextVariants.small}>{hdrPreviewHint}</Text>
+                        )}
+                        {COLOR_SPACE_FILE_FORMATS.includes(fileFormat) && !(hdr && fileFormat === FileFormats.Jxl) && (
+                          <div className={isExporting ? 'opacity-50 pointer-events-none' : ''}>
+                            <Text variant={TextVariants.label} className="mb-1">
+                              {t('export.file.colorSpace')}
+                            </Text>
+                            <Dropdown
+                              options={EXPORT_COLOR_SPACES}
+                              value={colorSpace}
+                              onChange={(value) => setColorSpace(value as ExportColorSpace)}
+                              disabled={isExporting}
+                              className="w-full"
+                            />
+                          </div>
                         )}
                         {[FileFormats.Jpeg, FileFormats.Png, FileFormats.Tiff].includes(fileFormat as FileFormats) && (
                           <div className="flex items-center gap-2">

@@ -37,6 +37,7 @@ export enum Panel {
   Presets = 'presets',
   FolderTree = 'folderTree',
   Tethering = 'tethering',
+  Filmstrip = 'filmstrip',
 }
 
 export type PanelRegion = 'leftTop' | 'leftBottom' | 'rightTop' | 'rightBottom';
@@ -63,6 +64,7 @@ export interface UiVisibility {
   leftPanel: boolean;
   rightPanel: boolean;
   quickFilter?: boolean;
+  dockedQuickFilter?: boolean;
 }
 
 export interface CollapsibleSectionsState {
