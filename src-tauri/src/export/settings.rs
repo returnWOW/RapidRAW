@@ -35,15 +35,6 @@ impl From<TiffBitDepth> for u8 {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
-#[serde(rename_all = "camelCase")]
-pub enum OutputColorSpace {
-    #[default]
-    Srgb,
-    DisplayP3,
-    AdobeRgb,
-}
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub enum ResizeMode {
@@ -120,8 +111,6 @@ pub struct ExportSettings {
     pub subfolder: Option<String>,
     #[serde(default)]
     pub dpi: Option<u16>,
-    #[serde(default)]
-    pub output_color_space: OutputColorSpace,
     #[serde(default)]
     pub export_original: Option<OriginalExportOptions>,
 }
